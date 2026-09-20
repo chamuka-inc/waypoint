@@ -4,6 +4,12 @@
   "private": true,
   "type": "module",
   "description": "A personal career research desktop application powered by Codex and TypeSafe Jev",
+  "author": "Chamuka Inc.",
+  "homepage": "https://chamuka-inc.github.io/waypoint/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chamuka-inc/waypoint.git"
+  },
   "main": "dist-server/electron/main.js",
   "scripts": {
     "dev": "node --import tsx server/preview.ts",

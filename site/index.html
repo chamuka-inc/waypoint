@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Waypoint is a private desktop workspace for evidence-led career research, opportunity discovery, and application planning."
+    />
+    <meta name="theme-color" content="#f2eee6" />
+    <title>Waypoint — Find the right next move</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #172b27;
+        --muted: #62706c;
+        --paper: #f2eee6;
+        --card: #fffdf8;
+        --line: #d9d4c9;
+        --green: #185c4e;
+        --green-light: #d7e8df;
+        --coral: #e67f62;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body { margin: 0; background: var(--paper); color: var(--ink); }
+      a { color: inherit; }
+
+      .shell { width: min(1160px, calc(100% - 40px)); margin: 0 auto; }
+      nav { display: flex; align-items: center; justify-content: space-between; padding: 24px 0; }
+      .brand { display: flex; align-items: center; gap: 12px; font-weight: 760; letter-spacing: -.02em; text-decoration: none; }
+      .mark { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px; background: var(--green); color: white; }
+      .nav-links { display: flex; align-items: center; gap: 24px; color: var(--muted); font-size: 14px; }
+      .nav-links a { text-decoration: none; }
+      .button { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 46px; padding: 0 20px; border-radius: 12px; background: var(--green); color: white; font-weight: 700; text-decoration: none; box-shadow: 0 8px 24px rgba(24,92,78,.16); }
+      .button.secondary { background: transparent; border: 1px solid var(--line); color: var(--ink); box-shadow: none; }
+
+      .hero { display: grid; grid-template-columns: .88fr 1.12fr; gap: 64px; align-items: center; padding: 74px 0 100px; }
+      .eyebrow { display: inline-flex; gap: 8px; align-items: center; padding: 7px 11px; border: 1px solid #b8d2c7; border-radius: 999px; color: var(--green); background: var(--green-light); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+      h1 { margin: 22px 0 20px; max-width: 700px; font-family: Georgia, "Times New Roman", serif; font-size: clamp(52px, 7vw, 88px); line-height: .94; letter-spacing: -.052em; font-weight: 500; }
+      .lede { max-width: 580px; margin: 0; color: var(--muted); font-size: 19px; line-height: 1.65; }
+      .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+      .platforms { margin-top: 16px; color: var(--muted); font-size: 13px; }
+      .hero-shot { position: relative; }
+      .hero-shot::before { content: ""; position: absolute; inset: 8% -4% -5% 11%; border-radius: 44px; background: var(--coral); opacity: .18; transform: rotate(3deg); }
+      .hero-shot img { position: relative; width: 100%; display: block; border-radius: 18px; border: 1px solid rgba(23,43,39,.15); box-shadow: 0 36px 80px rgba(23,43,39,.18); }
+
+      .proof { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+      .proof div { padding: 28px 30px; text-align: center; color: var(--muted); }
+      .proof div + div { border-left: 1px solid var(--line); }
+      .proof strong { display: block; margin-bottom: 6px; color: var(--ink); font-size: 18px; }
+
+      section { padding: 110px 0; }
+      .section-head { max-width: 680px; margin-bottom: 52px; }
+      .section-head h2 { margin: 0 0 16px; font-family: Georgia, "Times New Roman", serif; font-weight: 500; font-size: clamp(40px, 5vw, 62px); letter-spacing: -.04em; }
+      .section-head p { margin: 0; color: var(--muted); font-size: 18px; line-height: 1.6; }
+      .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+      .feature { padding: 30px; border: 1px solid var(--line); border-radius: 20px; background: rgba(255,253,248,.72); }
+      .feature span { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 11px; background: var(--green-light); color: var(--green); font-weight: 800; }
+      .feature h3 { margin: 22px 0 10px; font-size: 19px; }
+      .feature p { margin: 0; color: var(--muted); line-height: 1.58; }
+
+      .showcase { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; align-items: start; }
+      .showcase figure { margin: 0; }
+      .showcase figure:nth-child(2) { margin-top: 72px; }
+      .showcase img { width: 100%; display: block; border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 24px 54px rgba(23,43,39,.12); }
+      figcaption { padding: 14px 4px 0; color: var(--muted); font-size: 14px; }
+
+      .cta { padding: 68px; border-radius: 28px; background: var(--ink); color: white; text-align: center; }
+      .cta h2 { margin: 0 0 14px; font-family: Georgia, "Times New Roman", serif; font-size: clamp(38px, 5vw, 60px); font-weight: 500; letter-spacing: -.04em; }
+      .cta p { max-width: 650px; margin: 0 auto 30px; color: #bdc9c5; font-size: 18px; line-height: 1.55; }
+      .cta .button { background: #f7f2e9; color: var(--ink); }
+      footer { display: flex; justify-content: space-between; gap: 24px; padding: 38px 0 48px; color: var(--muted); font-size: 13px; }
+
+      @media (max-width: 820px) {
+        .nav-links a:not(.button) { display: none; }
+        .hero { grid-template-columns: 1fr; gap: 52px; padding-top: 44px; }
+        .hero-copy { text-align: center; }
+        .lede { margin: 0 auto; }
+        .actions { justify-content: center; }
+        .proof, .features, .showcase { grid-template-columns: 1fr; }
+        .proof div + div { border-left: 0; border-top: 1px solid var(--line); }
+        .showcase figure:nth-child(2) { margin-top: 0; }
+        .cta { padding: 48px 22px; }
+      }
+
+      @media (max-width: 520px) {
+        .shell { width: min(100% - 24px, 1160px); }
+        .nav-links .button { min-height: 40px; padding: 0 14px; }
+        .hero { padding-bottom: 70px; }
+        h1 { font-size: 51px; }
+        section { padding: 76px 0; }
+        footer { flex-direction: column; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="shell">
+      <nav aria-label="Primary navigation">
+        <a class="brand" href="#top"><span class="mark">W</span> Waypoint</a>
+        <div class="nav-links">
+          <a href="#features">Features</a>
+          <a href="https://github.com/chamuka-inc/waypoint">Source</a>
+          <a class="button" href="https://github.com/chamuka-inc/waypoint/releases/latest">Download</a>
+        </div>
+      </nav>
+    </header>
+
+    <main id="top">
+      <div class="hero shell">
+        <div class="hero-copy">
+          <span class="eyebrow">Private desktop workspace</span>
+          <h1>Find the right next move.</h1>
+          <p class="lede">Turn your experience, ambitions, and preferences into focused career research—with evidence you can inspect and practical next steps you can act on.</p>
+          <div class="actions">
+            <a class="button" href="https://github.com/chamuka-inc/waypoint/releases/latest">Download Waypoint ↓</a>
+            <a class="button secondary" href="https://github.com/chamuka-inc/waypoint#readme">View documentation</a>
+          </div>
+          <p class="platforms">Installers for macOS, Windows, and Linux · Open source</p>
+        </div>
+        <div class="hero-shot">
+          <img src="waypoint-preview.png" alt="Waypoint opportunity discovery workspace" />
+        </div>
+      </div>
+
+      <div class="proof shell" aria-label="Product principles">
+        <div><strong>Evidence first</strong>Every opportunity links back to public sources.</div>
+        <div><strong>Your data, local</strong>Your workspace stays on your computer.</div>
+        <div><strong>Human in control</strong>Review every judgement before acting.</div>
+      </div>
+
+      <section id="features" class="shell">
+        <div class="section-head">
+          <h2>Career research that starts with you.</h2>
+          <p>Waypoint combines your real experience with your constraints and ambitions, helping you compare direct-fit, adjacent, and sensible stretch roles in one calm workspace.</p>
+        </div>
+        <div class="features">
+          <article class="feature"><span>01</span><h3>Build a useful profile</h3><p>Import your CV, review the extracted evidence, and describe what you want from your next move.</p></article>
+          <article class="feature"><span>02</span><h3>Research live opportunities</h3><p>Use your local Codex CLI to investigate roles, sources, responsibilities, salary, and fit.</p></article>
+          <article class="feature"><span>03</span><h3>Move from insight to action</h3><p>Shortlist roles, prepare examples, add notes, and track applications without losing the evidence.</p></article>
+        </div>
+      </section>
+
+      <section class="shell">
+        <div class="section-head">
+          <h2>See the reasoning.</h2>
+          <p>Scores are ordering aids, not hiring predictions. Waypoint keeps source excerpts, uncertainties, gaps, and checks visible so you can make the final call.</p>
+        </div>
+        <div class="showcase">
+          <figure><img src="waypoint-evidence.png" alt="Opportunity evidence and assessment in Waypoint" /><figcaption>Inspect responsibilities, fit evidence, trade-offs, and source links.</figcaption></figure>
+          <figure><img src="waypoint-paths.png" alt="Career path exploration in Waypoint" /><figcaption>Compare direct, adjacent, and stretch career paths.</figcaption></figure>
+        </div>
+      </section>
+
+      <section class="shell">
+        <div class="cta">
+          <h2>Your career, with a clearer compass.</h2>
+          <p>Download Waypoint and turn scattered job research into a focused, evidence-led plan.</p>
+          <a class="button" href="https://github.com/chamuka-inc/waypoint/releases/latest">Get the latest release</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="shell">
+      <span>© 2026 Chamuka Inc.</span>
+      <span>Waypoint does not apply to jobs or contact employers on your behalf.</span>
+    </footer>
+  </body>
+</html>

@@ -2,6 +2,8 @@
 
 A personal career research desktop app. Bring your experience, preferences, and ambitions; investigate direct-fit, adjacent, and sensible stretch opportunities with source evidence and actionable next steps.
 
+[Website](https://chamuka-inc.github.io/waypoint/) · [Download the latest release](https://github.com/chamuka-inc/waypoint/releases/latest)
+
 **Implemented stack:** Electron + HTML/CSS/TypeScript, Vite, Node, local Codex CLI, and TypeSafe Jev. Electron was chosen over Tauri to run the existing Node research engine and Codex subprocess without distributing a separate Node sidecar. The rendering layer uses a small explicit service bridge, so a Tauri shell can be substituted later.
 
 ## Run the desktop app
