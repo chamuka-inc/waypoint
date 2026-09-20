@@ -8,8 +8,8 @@ import { initialState } from '../src/demo.js';
 import { constraints, priorityScore } from '../src/ranking.js';
 import { parseResearch, parseProfile, safeURL } from '../server/schema.js';
 import { jevRequest, assessWithJev } from '../server/jev.js';
-import { CareerService, dispatch } from '../server/service.js';
-import { runCodex } from '../server/codex.js';
+import { CareerService, dispatch, MAX_OPPORTUNITIES } from '../server/service.js';
+import { runCodex, webSearchUpdates } from '../server/codex.js';
 import { createPreview } from '../server/preview.js';
 import type { ResearchResult } from '../src/types.js';
 
@@ -112,6 +112,27 @@ test('cancellation and failure preserve the previous workspace', async () => {
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test('opportunity removal cascades and newer research evicts the oldest over the cap', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'waypoint-cap-'));
+  try {
+    const service = await new CareerService(dir, false, async () => parseResearch(result())).init();
+    await service.saveProfile(initialState().profile);
+    const template = initialState().roles[0];
+    service.state.roles = Array.from({ length: MAX_OPPORTUNITIES + 5 }, (_, index) => ({ ...structuredClone(template), id: `old-${index}`, demo: false, discoveredAt: new Date(Date.UTC(2020, 0, index + 1)).toISOString() }));
+    service.state.saved = service.state.roles.map(role => role.id);
+    service.state.applications = [{ roleId: 'old-0', stage: 'Preparing', notes: 'Old note', updatedAt: '' }];
+    service.state.feedback = [{ id: 'feedback-old', roleId: 'old-0', kind: 'more', company: 'Old', title: 'Old', industry: 'Old', skills: [], createdAt: '' }];
+    await service.startResearch(); await settle(service);
+    assert.equal(service.state.roles.length, MAX_OPPORTUNITIES);
+    assert.ok(!service.state.roles.some(role => role.id === 'old-0'));
+    assert.ok(!service.state.applications.some(application => application.roleId === 'old-0'));
+    assert.ok(!service.state.feedback.some(item => item.roleId === 'old-0'));
+    const removable = service.state.roles.slice(0, 2).map(role => role.id);
+    await service.removeRoles(removable);
+    assert.ok(removable.every(id => !service.state.roles.some(role => role.id === id) && !service.state.saved.includes(id)));
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('preview API rejects cross-origin requests and allows same-origin app calls', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'waypoint-http-'));
   const preview = await createPreview({ directory: dir, port: 0, vite: false });
@@ -135,12 +156,22 @@ test('real subprocess adapter sends profile through stdin, sets a read-only sand
   const dir = await mkdtemp(join(tmpdir(), 'waypoint-cli-'));
   const binary = join(dir, 'fake-codex.mjs'); const old = process.env.CODEX_BIN;
   try {
-    await writeFile(binary, `#!/usr/bin/env node\nimport fs from 'node:fs';\nconst args=process.argv.slice(2);\nif(!args.includes('read-only')||!args.includes('--search'))process.exit(9);\nlet input='';for await(const c of process.stdin)input+=c;\nif(!input.includes('Alex Morgan'))process.exit(8);\nfs.writeFileSync(args[args.indexOf('--output-last-message')+1],JSON.stringify(${JSON.stringify(result())}));\nconsole.log(JSON.stringify({type:'thread.started'}));\n`);
+    await writeFile(binary, `#!/usr/bin/env node\nimport fs from 'node:fs';\nconst args=process.argv.slice(2);\nif(!args.includes('read-only')||!args.includes('--search'))process.exit(9);\nlet input='';for await(const c of process.stdin)input+=c;\nif(!input.includes('Alex Morgan'))process.exit(8);\nfs.writeFileSync(args[args.indexOf('--output-last-message')+1],JSON.stringify(${JSON.stringify(result())}));\nconsole.log(JSON.stringify({type:'thread.started'}));\nconsole.log(JSON.stringify({type:'item.completed',item:{type:'web_search',query:'product roles',action:{type:'open_page',url:'https://careers.acme.com/jobs/123'}}}));\n`);
     await chmod(binary, 0o700); process.env.CODEX_BIN = binary;
-    const events: string[] = [];
-    const output = await runCodex(initialState(), new AbortController().signal, x => events.push(x));
-    assert.equal(output.roles.length, 1); assert.ok(output.roles[0].id.startsWith('role-')); assert.ok(events[0].includes('connected'));
+    const events: string[] = []; const sources: string[] = [];
+    const output = await runCodex(initialState(), new AbortController().signal, (message, source) => { if (message) events.push(message); if (source) sources.push(source.url); });
+    assert.equal(output.roles.length, 1); assert.ok(output.roles[0].id.startsWith('role-')); assert.ok(events[0].includes('connected')); assert.deepEqual(sources, ['https://careers.acme.com/jobs/123']);
   } finally { if (old) process.env.CODEX_BIN = old; else delete process.env.CODEX_BIN; await rm(dir, { recursive: true, force: true }); }
+});
+
+test('web search activity exposes only safe public sources', () => {
+  const updates = webSearchUpdates({ type: 'item.completed', item: { type: 'web_search', query: 'product roles', action: { type: 'search', query: 'product roles' }, results: [
+    { url: 'https://jobs.example.org/role', title: 'Product role' },
+    { url: 'http://unsafe.example.org/role', title: 'Unsafe' },
+    { url: 'https://127.0.0.1/private', title: 'Private' },
+  ] } }, '2026-09-20T12:00:00.000Z');
+  assert.equal(updates[0].message, 'Searching live sources for “product roles”.');
+  assert.deepEqual(updates.flatMap(update => update.source ? [update.source] : []), [{ url: 'https://jobs.example.org/role', title: 'Product role', status: 'found', seenAt: '2026-09-20T12:00:00.000Z' }]);
 });
 
 test('corrupt saved data is preserved instead of overwritten', async () => {

@@ -62,8 +62,8 @@ Jev receives skills, ambitions, seniority, opportunity responsibilities/evidence
 1. **My profile:** Import a PDF, DOCX, TXT, or Markdown CV, or paste a LinkedIn-style profile. Extraction is local and reviewable. Add skills, projects, qualifications, outcomes, scope, and history. Scanned PDFs need OCR text supplied by the user.
 2. **Your next move:** Set salary/currency, location, remote/hybrid/on-site preferences, commute, industries, exclusions, seniority, work authorisation, and ambitions.
 3. **What matters most:** Weight experience fit, compensation, flexibility, and progression. Scores are preference ordering aids, not hiring probabilities.
-4. **Research opportunities:** Codex identifies role families, searches live sources, investigates vacancies, and returns a structured report. Research continues while you use other views. It has a 12-minute limit and can be cancelled.
-5. **Discover / Career paths:** Explore direct, adjacent, and stretch options. Filter and search; inspect evidence, responsibilities, salary, location, gaps, and source excerpts. Vacancy status is reported by the research agent and should be checked before applying.
+4. **Research opportunities:** Codex identifies role families, searches live sources, investigates vacancies, and returns a structured report. The research activity view shows safe public source links as they are found and reviewed. Research continues while you use other views. It has a 12-minute limit and can be cancelled.
+5. **Discover / Career paths:** Explore direct, adjacent, and stretch options. Filter and search; inspect evidence, responsibilities, salary, location, gaps, and source excerpts. Select and remove one or more opportunities when they are no longer useful. Vacancy status is reported by the research agent and should be checked before applying.
 6. **Shortlist / Applications:** Save roles, prepare truthful CV/interview examples, add notes, export a Markdown brief, and move applications through Preparing, Applied, Interview, and Offer.
 7. **Feedback:** “More like this”, “Too technical”, “Too junior”, salary/industry objections, and “Not for me” influence ordering and subsequent research. Undo feedback in Settings.
 
@@ -77,6 +77,7 @@ Jev receives skills, ambitions, seniority, opportunity responsibilities/evidence
 - Salary amounts preserve currency and pay period. Annual salary filtering/sorting only compares the user's currency; the app does not invent exchange rates or annualise hourly contracts.
 - Unknown salary, work arrangement, exclusions, and uncertain Jev fit remain visible as separate checks. Remote is not assumed to mean worldwide.
 - Saved/application roles absent from a new run are retained and marked uncertain. Stable IDs preserve notes when the same role returns.
+- The opportunity workspace holds at most 50 roles. Newer research replaces the oldest roles and removes their associated shortlist, application, and feedback records.
 - Export your workspace or shortlist from Settings/Shortlist. Workspace export contains personal data but no stored API key. To restore a backup, quit the app, preserve the existing `state.json`, replace it with a compatible exported file, and relaunch. There is no in-app restore UI yet.
 - “Start fresh” requires a confirmation in the app and clears candidate data; connection settings are retained.
 

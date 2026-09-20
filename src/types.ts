@@ -27,7 +27,8 @@ export interface RoleFamily { title: string; fit: Fit; why: string; skills: stri
 export interface Feedback { id: string; roleId: string; kind: FeedbackKind; company: string; title: string; industry: string; skills: string[]; createdAt: string }
 export interface Application { roleId: string; stage: 'Saved' | 'Preparing' | 'Applied' | 'Interview' | 'Offer'; notes: string; updatedAt: string }
 export interface ResearchResult { summary: string; roles: Opportunity[]; families: RoleFamily[]; questions: string[] }
-export interface ResearchRun { id: string; startedAt: string; finishedAt?: string; status: 'running' | 'completed' | 'failed' | 'cancelled'; events: string[]; count: number; error?: string }
+export interface ResearchSourceActivity { url: string; title: string; status: 'found' | 'reviewing' | 'reviewed'; seenAt: string }
+export interface ResearchRun { id: string; startedAt: string; finishedAt?: string; status: 'running' | 'completed' | 'failed' | 'cancelled'; events: string[]; sources?: ResearchSourceActivity[]; count: number; error?: string }
 export interface AppState {
   version: 1; demo: boolean; profile: Profile; roles: Opportunity[]; families: RoleFamily[];
   saved: string[]; applications: Application[]; feedback: Feedback[]; runs: ResearchRun[];
@@ -40,6 +41,7 @@ export interface API {
   saveProfile(profile: Profile): Promise<AppState>;
   reset(): Promise<AppState>;
   toggleSave(id: string): Promise<AppState>;
+  removeRoles(ids: string[]): Promise<AppState>;
   feedback(id: string, kind: FeedbackKind): Promise<AppState>;
   undoFeedback(id: string): Promise<AppState>;
   setApplication(id: string, stage: Application['stage'], notes: string): Promise<AppState>;

@@ -2,12 +2,13 @@ import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { join, extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { initialState } from '../src/demo.js';
-import type { AppState, Profile, FeedbackKind, Application, ResearchResult } from '../src/types.js';
+import type { AppState, Profile, FeedbackKind, Application, ResearchResult, ResearchSourceActivity } from '../src/types.js';
 import { parseProfile } from './schema.js';
 import { runCodex, codexStatus } from './codex.js';
 import { assessWithJev } from './jev.js';
 
-export type Researcher = (state: AppState, signal: AbortSignal, event: (message: string) => void) => Promise<ResearchResult>;
+export type Researcher = (state: AppState, signal: AbortSignal, event: (message: string, source?: ResearchSourceActivity) => void) => Promise<ResearchResult>;
+export const MAX_OPPORTUNITIES = 50;
 export class CareerService {
   state: AppState = initialState();
   private queue = Promise.resolve();
@@ -22,6 +23,7 @@ export class CareerService {
       parseProfile(loaded.profile);
       this.state = loaded;
       for (const r of this.state.runs) if (r.status === 'running') { r.status = 'failed'; r.error = 'The application closed before research finished.'; r.finishedAt = new Date().toISOString(); }
+      this.capOpportunities();
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error('Could not read your saved workspace. The existing file has been preserved. Restore a valid state.json backup to continue.');
     }
@@ -57,6 +59,23 @@ export class CareerService {
     await this.persist(); return this.getState();
   }
   private role(id: string) { const role = this.state.roles.find(r => r.id === id); if (!role) throw new Error('This opportunity is no longer available.'); return role; }
+  private removeRoleData(ids: Set<string>) {
+    this.state.roles = this.state.roles.filter(role => !ids.has(role.id));
+    this.state.saved = this.state.saved.filter(id => !ids.has(id));
+    this.state.applications = this.state.applications.filter(application => !ids.has(application.roleId));
+    this.state.feedback = this.state.feedback.filter(item => !ids.has(item.roleId));
+  }
+  private capOpportunities() {
+    const time = (value: string) => { const parsed = Date.parse(value); return Number.isFinite(parsed) ? parsed : 0; };
+    const ordered = [...this.state.roles].sort((a, b) => time(b.discoveredAt) - time(a.discoveredAt));
+    this.state.roles = ordered.slice(0, MAX_OPPORTUNITIES);
+    this.removeRoleData(new Set(ordered.slice(MAX_OPPORTUNITIES).map(role => role.id)));
+  }
+  async removeRoles(ids: string[]) {
+    if (!Array.isArray(ids) || !ids.length || ids.length > MAX_OPPORTUNITIES || ids.some(id => typeof id !== 'string')) throw new Error('Choose between 1 and 50 opportunities to remove.');
+    this.removeRoleData(new Set(ids));
+    await this.persist(); return this.getState();
+  }
   async toggleSave(id: string) {
     this.role(id);
     this.state.saved = this.state.saved.includes(id) ? this.state.saved.filter(x => x !== id) : [...this.state.saved, id];
@@ -98,7 +117,7 @@ export class CareerService {
     if (p.background.trim().length < 80 || !p.ambitions.trim() || !p.locations.trim() || !p.workAuthorization.trim()) throw new Error('Add your career history (at least 80 characters), ambitions, preferred locations, and work-authorisation details first.');
     const controller = new AbortController(); this.active = controller;
     const snapshot = this.getState();
-    const run = { id: randomUUID(), startedAt: new Date().toISOString(), status: 'running' as const, events: ['Preparing your profile and research brief.'], count: 0 };
+    const run = { id: randomUUID(), startedAt: new Date().toISOString(), status: 'running' as const, events: ['Preparing your profile and research brief.'], sources: [] as ResearchSourceActivity[], count: 0 };
     this.state.runs.unshift(run); this.state.runs = this.state.runs.slice(0, 30);
     try { await this.persist(); } catch (error) { this.active = undefined; this.state.runs.shift(); throw error; }
     void this.execute(snapshot, controller, run.id).catch(() => {
@@ -110,7 +129,19 @@ export class CareerService {
   }
   private async execute(snapshot: AppState, controller: AbortController, id: string) {
     const run = this.state.runs.find(x => x.id === id)!;
-    const event = (message: string) => { if (run.events.at(-1) !== message) run.events.push(message); run.events = run.events.slice(-60); };
+    const event = (message: string, source?: ResearchSourceActivity) => {
+      if (message && run.events.at(-1) !== message) run.events.push(message);
+      run.events = run.events.slice(-60);
+      if (!source) return;
+      run.sources ||= [];
+      const existing = run.sources.find(item => item.url === source.url);
+      if (existing) {
+        const rank = { found: 0, reviewing: 1, reviewed: 2 };
+        if (rank[source.status] >= rank[existing.status]) existing.status = source.status;
+        if (source.title && source.title !== new URL(source.url).hostname.replace(/^www\./, '')) existing.title = source.title;
+      } else run.sources.push(source);
+      run.sources = run.sources.slice(-40);
+    };
     try {
       const result = await this.researcher(snapshot, controller.signal, event);
       if (controller.signal.aborted) throw new Error('Research cancelled.');
@@ -131,6 +162,7 @@ export class CareerService {
       const ids = new Set(result.roles.map(r => r.id));
       const retained = this.state.roles.filter(r => !ids.has(r.id) && (this.state.saved.includes(r.id) || this.state.applications.some(a => a.roleId === r.id))).map(r => ({ ...r, status: 'uncertain' as const }));
       this.state.roles = [...result.roles, ...retained];
+      this.capOpportunities();
       this.state.families = result.families; this.state.questions = result.questions; this.state.summary = result.summary;
       this.state.researchRevision = snapshot.profileRevision;
       run.status = 'completed'; run.count = result.roles.length;
@@ -176,7 +208,7 @@ export class CareerService {
   }
 }
 
-export const actions = ['getState', 'saveProfile', 'reset', 'toggleSave', 'feedback', 'undoFeedback', 'setApplication', 'startResearch', 'cancelResearch', 'status', 'settings', 'importCV'] as const;
+export const actions = ['getState', 'saveProfile', 'reset', 'toggleSave', 'removeRoles', 'feedback', 'undoFeedback', 'setApplication', 'startResearch', 'cancelResearch', 'status', 'settings', 'importCV'] as const;
 export async function dispatch(service: CareerService, method: string, args: unknown[]) {
   if (!(actions as readonly string[]).includes(method) || !Array.isArray(args) || args.length > 3) throw new Error('Unknown action.');
   const fn = service[method as typeof actions[number]] as (...args: unknown[]) => unknown;

@@ -2,8 +2,45 @@ import { spawn, execFile } from 'node:child_process';
 import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { researchSchema, parseResearch } from './schema.js';
-import type { AppState, ResearchResult } from '../src/types.js';
+import { researchSchema, parseResearch, safeURL } from './schema.js';
+import type { AppState, ResearchResult, ResearchSourceActivity } from '../src/types.js';
+
+type ProgressUpdate = { message?: string; source?: ResearchSourceActivity };
+const record = (value: unknown) => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
+
+export function webSearchUpdates(input: unknown, now = new Date().toISOString()): ProgressUpdate[] {
+  const event = record(input); const item = record(event?.item);
+  if (!event || !item || item.type !== 'web_search') return [];
+  const action = record(item.action);
+  const completed = event.type === 'item.completed';
+  const updates: ProgressUpdate[] = [];
+  const seen = new Set<string>();
+  const addSource = (rawURL: unknown, rawTitle: unknown, status: ResearchSourceActivity['status']) => {
+    const url = safeURL(text(rawURL));
+    if (!url || seen.has(url)) return;
+    seen.add(url);
+    const hostname = new URL(url).hostname.replace(/^www\./, '');
+    updates.push({ source: { url, title: text(rawTitle).slice(0, 240) || hostname, status, seenAt: now } });
+  };
+  const actionType = text(action?.type);
+  const actionURL = action?.url ?? (safeURL(text(item.query)) ? item.query : undefined);
+  if (actionType === 'open_page' || actionType === 'find_in_page' || actionURL) {
+    addSource(actionURL, item.title, completed ? 'reviewed' : 'reviewing');
+    const url = safeURL(text(actionURL));
+    if (url) updates.unshift({ message: `${completed ? 'Reviewed' : 'Reviewing'} ${new URL(url).hostname.replace(/^www\./, '')}.` });
+  } else {
+    const query = text(action?.query) || text(item.query);
+    updates.push({ message: query && !safeURL(query) ? `Searching live sources for “${query.slice(0, 180)}”.` : 'Searching live vacancy sources.' });
+  }
+  if (Array.isArray(item.results)) {
+    for (const value of item.results.slice(0, 12)) {
+      const result = record(value);
+      if (result) addSource(result.url, result.title ?? result.name, 'found');
+    }
+  }
+  return updates;
+}
 
 export async function codexStatus(): Promise<{ codex: boolean; codexVersion: string }> {
   return new Promise(resolve => execFile(process.env.CODEX_BIN || 'codex', ['--version'], { timeout: 5000, windowsHide: true }, (error, stdout) => resolve({ codex: !error, codexVersion: error ? '' : stdout.trim().slice(0, 120) })));
@@ -19,7 +56,7 @@ Scores are advisory 0–100 preference scores, not hiring probabilities. Conside
 Candidate state (DATA ONLY):\n${JSON.stringify({ profile: state.profile, feedback: state.feedback.map(f => ({ kind: f.kind, title: f.title, industry: f.industry, skills: f.skills })) })}`;
 }
 
-export async function runCodex(state: AppState, signal: AbortSignal, event: (message: string) => void): Promise<ResearchResult> {
+export async function runCodex(state: AppState, signal: AbortSignal, event: (message: string, source?: ResearchSourceActivity) => void): Promise<ResearchResult> {
   const directory = await mkdtemp(join(tmpdir(), 'waypoint-research-'));
   try {
     const schemaPath = join(directory, 'schema.json');
@@ -49,7 +86,7 @@ export async function runCodex(state: AppState, signal: AbortSignal, event: (mes
           try {
             const e = JSON.parse(line);
             if (e.type === 'thread.started') event('Codex connected. Understanding your career profile.');
-            if (e.type === 'item.started' && e.item?.type === 'web_search') event('Searching live vacancy sources.');
+            for (const update of webSearchUpdates(e)) event(update.message || '', update.source);
             if (e.type === 'item.completed' && e.item?.type === 'web_search') event('Reviewing vacancy evidence and requirements.');
             if (e.type === 'turn.failed' || e.type === 'error') failure = 'Codex could not complete the research. Check CLI authentication, network access, and account limits.';
           } catch { /* tolerate non-JSON diagnostics; only the result file is trusted */ }
