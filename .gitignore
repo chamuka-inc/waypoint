@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-server/
+release/
+.local-data/
+.env
+*.log
+
+test-artifacts/
