@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, safeStorage, shell, Notification } from 'electron';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
@@ -9,6 +9,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 let service: CareerService;
 let window: BrowserWindow | null = null;
 let volatileKey = '';
+let scheduleTimer: ReturnType<typeof setInterval> | undefined;
+let scheduledRunActive = false;
 const indexPath = join(here, '../../dist/index.html');
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
@@ -24,6 +26,27 @@ else {
         else volatileKey = key;
       },
     }).init();
+    const showWindow = () => { window?.show(); window?.focus(); };
+    const notifyNewMatches = (count: number) => {
+      if (!count || !Notification.isSupported()) return;
+      const notification = new Notification({ title: 'New Waypoint matches', body: count === 1 ? '1 new opportunity matches your profile.' : `${count} new opportunities match your profile.` });
+      notification.on('click', showWindow); notification.show();
+    };
+    const checkSchedule = async () => {
+      if (scheduledRunActive) return;
+      const before = new Set(service.state.roles.map(role => role.id));
+      try {
+        if (!await service.startScheduledResearch()) return;
+        scheduledRunActive = true;
+        const runId = service.state.runs[0]?.id;
+        while (service.state.runs.find(run => run.id === runId)?.status === 'running') await new Promise(resolve => setTimeout(resolve, 2000));
+        const run = service.state.runs.find(item => item.id === runId);
+        if (run?.status === 'completed') notifyNewMatches(service.state.roles.filter(role => !before.has(role.id)).length);
+      } catch (error) { console.error('Scheduled research failed:', (error as Error).message); }
+      finally { scheduledRunActive = false; }
+    };
+    scheduleTimer = setInterval(() => { void checkSchedule(); }, 60_000);
+    setTimeout(() => { void checkSchedule(); }, 1500);
     ipcMain.handle('waypoint:action', async (event, method: string, args: unknown[]) => {
       if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) throw new Error('Untrusted sender.');
       return dispatch(service, method, args);
@@ -41,5 +64,5 @@ else {
     app.on('activate', () => { if (!window) openWindow(); });
   }).catch(error => { console.error('Waypoint startup failed:', error.message); app.quit(); });
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-  app.on('before-quit', () => { void service?.shutdown(); });
+  app.on('before-quit', () => { if (scheduleTimer) clearInterval(scheduleTimer); void service?.shutdown(); });
 }

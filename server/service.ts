@@ -2,13 +2,20 @@ import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { join, extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { initialState } from '../src/demo.js';
-import type { AppState, Profile, FeedbackKind, Application, ResearchResult, ResearchSourceActivity } from '../src/types.js';
+import type { AppState, Profile, FeedbackKind, Application, ResearchResult, ResearchSourceActivity, ResearchSchedule } from '../src/types.js';
 import { parseProfile } from './schema.js';
 import { runCodex, codexStatus } from './codex.js';
 import { assessWithJev } from './jev.js';
 
 export type Researcher = (state: AppState, signal: AbortSignal, event: (message: string, source?: ResearchSourceActivity) => void) => Promise<ResearchResult>;
 export const MAX_OPPORTUNITIES = 50;
+export function scheduleDue(schedule: ResearchSchedule, now = new Date()) {
+  if (!schedule.enabled || !/^([01]\d|2[0-3]):[0-5]\d$/.test(schedule.time)) return false;
+  const [hour, minute] = schedule.time.split(':').map(Number);
+  const slot = new Date(now); slot.setHours(hour, minute, 0, 0);
+  if (slot > now) slot.setDate(slot.getDate() - 1);
+  return !schedule.lastRunAt || Date.parse(schedule.lastRunAt) < slot.getTime();
+}
 export class CareerService {
   state: AppState = initialState();
   private queue = Promise.resolve();
@@ -22,6 +29,8 @@ export class CareerService {
       if (loaded.version !== 1 || !Array.isArray(loaded.roles) || !Array.isArray(loaded.runs)) throw new Error('Unsupported data format.');
       parseProfile(loaded.profile);
       this.state = loaded;
+      const savedSchedule = loaded.settings?.researchSchedule;
+      this.state.settings = { ...initialState(false).settings, ...loaded.settings, researchSchedule: { enabled: Boolean(savedSchedule?.enabled), time: typeof savedSchedule?.time === 'string' ? savedSchedule.time : '09:00', lastRunAt: typeof savedSchedule?.lastRunAt === 'string' ? savedSchedule.lastRunAt : '' } };
       for (const r of this.state.runs) if (r.status === 'running') { r.status = 'failed'; r.error = 'The application closed before research finished.'; r.finishedAt = new Date().toISOString(); }
       this.capOpportunities();
     } catch (e) {
@@ -106,7 +115,20 @@ export class CareerService {
       if (this.keyStore) this.keyStore.write(key.trim()); else this.sessionKey = key.trim();
     }
     if (settings.jevEnabled && !this.getKey()) throw new Error('Add a TypeSafe API key before enabling Jev.');
-    this.state.settings = structuredClone(settings); await this.persist(); return this.getState();
+    this.state.settings = { ...structuredClone(settings), researchSchedule: this.state.settings.researchSchedule }; await this.persist(); return this.getState();
+  }
+  async schedule(schedule: Omit<ResearchSchedule, 'lastRunAt'>) {
+    if (typeof schedule?.enabled !== 'boolean' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(schedule.time)) throw new Error('Choose a valid research schedule.');
+    if (schedule.enabled && this.state.demo) throw new Error('Create your profile before enabling scheduled research.');
+    const enabling = schedule.enabled && !this.state.settings.researchSchedule.enabled;
+    this.state.settings.researchSchedule = { ...schedule, lastRunAt: enabling ? new Date().toISOString() : this.state.settings.researchSchedule.lastRunAt };
+    await this.persist(); return this.getState();
+  }
+  async startScheduledResearch(now = new Date()) {
+    if (!scheduleDue(this.state.settings.researchSchedule, now) || this.active) return false;
+    await this.startResearch();
+    this.state.settings.researchSchedule.lastRunAt = now.toISOString();
+    await this.persist(); return true;
   }
   private getKey() { return this.keyStore?.read() || this.sessionKey || process.env.TYPESAFE_API_KEY || ''; }
   async status() { return { ...await codexStatus(), desktop: this.desktop, jevConfigured: Boolean(this.getKey()), storage: this.desktop ? 'Device workspace' : 'Local preview workspace' }; }
@@ -208,7 +230,7 @@ export class CareerService {
   }
 }
 
-export const actions = ['getState', 'saveProfile', 'reset', 'toggleSave', 'removeRoles', 'feedback', 'undoFeedback', 'setApplication', 'startResearch', 'cancelResearch', 'status', 'settings', 'importCV'] as const;
+export const actions = ['getState', 'saveProfile', 'reset', 'toggleSave', 'removeRoles', 'feedback', 'undoFeedback', 'setApplication', 'startResearch', 'cancelResearch', 'status', 'settings', 'schedule', 'importCV'] as const;
 export async function dispatch(service: CareerService, method: string, args: unknown[]) {
   if (!(actions as readonly string[]).includes(method) || !Array.isArray(args) || args.length > 3) throw new Error('Unknown action.');
   const fn = service[method as typeof actions[number]] as (...args: unknown[]) => unknown;

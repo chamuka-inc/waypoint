@@ -29,11 +29,12 @@ export interface Application { roleId: string; stage: 'Saved' | 'Preparing' | 'A
 export interface ResearchResult { summary: string; roles: Opportunity[]; families: RoleFamily[]; questions: string[] }
 export interface ResearchSourceActivity { url: string; title: string; status: 'found' | 'reviewing' | 'reviewed'; seenAt: string }
 export interface ResearchRun { id: string; startedAt: string; finishedAt?: string; status: 'running' | 'completed' | 'failed' | 'cancelled'; events: string[]; sources?: ResearchSourceActivity[]; count: number; error?: string }
+export interface ResearchSchedule { enabled: boolean; time: string; lastRunAt: string }
 export interface AppState {
   version: 1; demo: boolean; profile: Profile; roles: Opportunity[]; families: RoleFamily[];
   saved: string[]; applications: Application[]; feedback: Feedback[]; runs: ResearchRun[];
   summary: string; questions: string[]; profileRevision: number; researchRevision: number;
-  settings: { jevEnabled: boolean; jevModel: string };
+  settings: { jevEnabled: boolean; jevModel: string; researchSchedule: ResearchSchedule };
 }
 export interface RuntimeStatus { desktop: boolean; codex: boolean; codexVersion: string; jevConfigured: boolean; storage: string }
 export interface API {
@@ -49,5 +50,6 @@ export interface API {
   cancelResearch(): Promise<AppState>;
   status(): Promise<RuntimeStatus>;
   settings(settings: AppState['settings'], key?: string): Promise<AppState>;
+  schedule(schedule: Omit<ResearchSchedule, 'lastRunAt'>): Promise<AppState>;
   importCV(name: string, data: string): Promise<string>;
 }

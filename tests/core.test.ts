@@ -8,7 +8,7 @@ import { initialState } from '../src/demo.js';
 import { constraints, priorityScore } from '../src/ranking.js';
 import { parseResearch, parseProfile, safeURL } from '../server/schema.js';
 import { jevRequest, assessWithJev } from '../server/jev.js';
-import { CareerService, dispatch, MAX_OPPORTUNITIES } from '../server/service.js';
+import { CareerService, dispatch, MAX_OPPORTUNITIES, scheduleDue } from '../server/service.js';
 import { runCodex, webSearchUpdates } from '../server/codex.js';
 import { createPreview } from '../server/preview.js';
 import type { ResearchResult } from '../src/types.js';
@@ -131,6 +131,13 @@ test('opportunity removal cascades and newer research evicts the oldest over the
     await service.removeRoles(removable);
     assert.ok(removable.every(id => !service.state.roles.some(role => role.id === id) && !service.state.saved.includes(id)));
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('research schedules become due once per matching local-time slot', () => {
+  const schedule = { enabled: true, time: '09:00', lastRunAt: new Date(2026, 8, 20, 12).toISOString() };
+  assert.equal(scheduleDue(schedule, new Date(2026, 8, 21, 8, 59)), false);
+  assert.equal(scheduleDue(schedule, new Date(2026, 8, 21, 9, 0)), true);
+  assert.equal(scheduleDue({ ...schedule, lastRunAt: new Date(2026, 8, 21, 9, 0).toISOString() }, new Date(2026, 8, 21, 12)), false);
 });
 
 test('preview API rejects cross-origin requests and allows same-origin app calls', async () => {

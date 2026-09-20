@@ -67,6 +67,8 @@ Jev receives skills, ambitions, seniority, opportunity responsibilities/evidence
 6. **Shortlist / Applications:** Save roles, prepare truthful CV/interview examples, add notes, export a Markdown brief, and move applications through Preparing, Applied, Interview, and Offer.
 7. **Feedback:** “More like this”, “Too technical”, “Too junior”, salary/industry objections, and “Not for me” influence ordering and subsequent research. Undo feedback in Settings.
 
+In the desktop app, **Settings → Daily research** can run research once a day at a chosen local time. Waypoint must remain open or minimized. It sends an operating-system notification only when a new stable opportunity ID appears; it never applies or contacts anyone.
+
 ## Data and source handling
 
 - Data lives in Electron's `userData` directory (`state.json`). Browser preview uses `.local-data/` or `WAYPOINT_DATA_DIR`.
@@ -119,7 +121,7 @@ Packaging configuration is included, but signed installers are not included in t
 
 ## Current boundaries
 
-This is a working first implementation, not a fully hardened employment-data platform. It has no job-board login automation, LinkedIn scraping, background scheduling while the app is closed, automatic application submission, CV rewriting into a new DOCX, OCR, cloud sync, or multi-user accounts. Source discovery depends on the installed Codex version, web-search access, account permissions, and vacancy accessibility. It does not bypass paywalls or access restrictions. Model judgments can be wrong even when the returned data is schema-valid.
+This is a working first implementation, not a fully hardened employment-data platform. It has no job-board login automation, LinkedIn scraping, scheduling while the desktop process is not running, automatic application submission, CV rewriting into a new DOCX, OCR, cloud sync, or multi-user accounts. Source discovery depends on the installed Codex version, web-search access, account permissions, and vacancy accessibility. It does not bypass paywalls or access restrictions. Model judgments can be wrong even when the returned data is schema-valid.
 
 The next production gates are authenticated end-to-end research evaluation, provider-specific search/source coverage testing, native packaging on the target OS, document-parser isolation and resource-limit hardening, accessibility auditing, and a labelled evaluation set for Jev thresholds and candidate-fit quality.
 

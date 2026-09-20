@@ -89,6 +89,12 @@ try {
   await page.locator('[data-action="save-profile"]').first().click();
   await page.waitForFunction(() => document.querySelector('#toast').textContent.includes('Profile saved'));
   check(service.state.profile.name === 'Jamie Rivers', 'Profile form preserves values across steps');
+  await page.locator('.nav-item[data-nav="settings"]').click();
+  await page.locator('#schedule-form [name="enabled"]').check();
+  await page.locator('#schedule-form [name="time"]').fill('09:30');
+  await page.locator('#schedule-form button[type="submit"]').click();
+  await page.waitForFunction(() => document.querySelector('#toast').textContent.includes('Daily research enabled'));
+  check(service.state.settings.researchSchedule.enabled && service.state.settings.researchSchedule.time === '09:30', 'Scheduled research preferences persist');
   await page.locator('.nav-item[data-nav="research"]').click();
   await page.locator('[data-action="research"]').click();
   await page.waitForSelector('.live-source');
