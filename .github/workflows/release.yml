@@ -34,6 +34,25 @@ jobs:
         run: npm test && npm run build
       - name: Build Electrobun release
         run: npm run package
+      - name: Smoke test packaged Linux app
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 librsvg2-2
+          log="$RUNNER_TEMP/waypoint-desktop.log"
+          xvfb-run -a build-electrobun/stable-linux-x64/Waypoint/bin/launcher >"$log" 2>&1 &
+          app_pid=$!
+          ready=0
+          for _ in {1..20}; do
+            if grep -q "WAYPOINT_DESKTOP_READY" "$log"; then ready=1; break; fi
+            if ! kill -0 "$app_pid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          cat "$log"
+          kill "$app_pid" 2>/dev/null || true
+          pkill -P "$app_pid" 2>/dev/null || true
+          test "$ready" -eq 1
       - uses: actions/upload-artifact@v6
         with:
           name: Waypoint-${{ matrix.artifact }}

@@ -24,7 +24,9 @@ const rpc = BrowserView.defineRPC<{
         return safe ? Utils.openExternal(safe) : false;
       },
     },
-    messages: {},
+    messages: {
+      ready: ({ title }) => console.log(`WAYPOINT_DESKTOP_READY ${title}`),
+    },
   },
 });
 

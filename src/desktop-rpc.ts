@@ -14,6 +14,8 @@ export type WaypointRPC = {
   };
   webview: {
     requests: {};
-    messages: {};
+    messages: {
+      ready: { title: string };
+    };
   };
 };

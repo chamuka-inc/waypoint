@@ -7,6 +7,10 @@ const rpc = Electroview.defineRPC<WaypointRPC>({
 });
 const view = new Electroview({ rpc });
 
+window.addEventListener('waypoint-ready', () => {
+  view.rpc!.send.ready({ title: document.title });
+}, { once: true });
+
 window.waypoint = {
   call: (method: string, ...args: unknown[]) => view.rpc!.request.action({ method, args }),
 };
