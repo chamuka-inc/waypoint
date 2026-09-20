@@ -16,30 +16,28 @@ jobs:
       matrix:
         include:
           - os: macos-14
-            artifact: macOS
-            pattern: release/*.dmg
+            artifact: macos-arm64
           - os: windows-2025
-            artifact: Windows
-            pattern: release/*.exe
+            artifact: windows-x64
           - os: ubuntu-24.04
-            artifact: Linux
-            pattern: release/*.AppImage
+            artifact: linux-x64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
       - run: npm ci
-      - name: Build installer
-        run: npm run dist -- --publish never
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      - uses: actions/upload-artifact@v4
+      - name: Verify application
+        if: runner.os == 'Linux'
+        run: npm test && npm run build
+      - name: Build Electrobun release
+        run: npm run package
+      - uses: actions/upload-artifact@v6
         with:
           name: Waypoint-${{ matrix.artifact }}
-          path: ${{ matrix.pattern }}
+          path: artifacts/*
           if-no-files-found: error
 
   release:
@@ -47,7 +45,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v7
         with:
           path: artifacts
           merge-multiple: true

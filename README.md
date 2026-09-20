@@ -4,11 +4,11 @@ A personal career research desktop app. Bring your experience, preferences, and 
 
 [Website](https://chamuka-inc.github.io/waypoint/) · [Download the latest release](https://github.com/chamuka-inc/waypoint/releases/latest)
 
-**Implemented stack:** Electron + HTML/CSS/TypeScript, Vite, Node, local Codex CLI, and TypeSafe Jev. Electron was chosen over Tauri to run the existing Node research engine and Codex subprocess without distributing a separate Node sidecar. The rendering layer uses a small explicit service bridge, so a Tauri shell can be substituted later.
+**Implemented stack:** Electrobun 2 + Bun + system webviews, HTML/CSS/TypeScript, Vite, local Codex CLI, and TypeSafe Jev. The privileged main process and renderer communicate through a single typed Electrobun RPC boundary. The browser preview uses the same application service over a loopback-only HTTP bridge.
 
 ## Run the desktop app
 
-Use Node.js 22.16 or later (Node 24 recommended), npm, and a desktop session on macOS, Windows, or Linux.
+Use Node.js 22.16 or later (Node 24 recommended), npm, and a supported desktop session: macOS 14+ on Apple Silicon, Windows 11+, or Ubuntu 24.04+. Other Linux distributions with GTK 3 and WebKitGTK 4.1 are community-supported by Electrobun. Electrobun 2 does not currently provide an Intel macOS runtime.
 
 ```sh
 npm ci
@@ -57,7 +57,7 @@ After Codex produces a sourced report, Jev evaluates three separate questions pe
 
 The adapter calls `POST https://api.typesafe.ai/v1/systemone` with documented `state`, `model`, and `questions` fields. It validates response probabilities. Choice confidence below 0.65, an uncertain choice, or disagreement with Codex flags the assessment for review. Such assessments never silently change fit or ranking. The threshold is a product default, not a calibrated hiring guarantee. Jev failures leave Codex results intact and appear in research activity.
 
-Jev receives skills, ambitions, seniority, opportunity responsibilities/evidence, selected preferences, and feedback. It does not receive the dedicated name field or raw CV, but free-text evidence can still contain personal information. Keys are kept out of the renderer and saved workspace. Desktop keys use Electron OS encryption when available; without a secure backend they stay in memory. Preview-entered keys are session-only.
+Jev receives skills, ambitions, seniority, opportunity responsibilities/evidence, selected preferences, and feedback. It does not receive the dedicated name field or raw CV, but free-text evidence can still contain personal information. Keys are kept out of the renderer and saved workspace. Desktop- and preview-entered keys remain in memory for the current session; `TYPESAFE_API_KEY` is the persistent deployment option until Electrobun exposes a cross-platform credential store.
 
 ## Candidate workflow
 
@@ -73,7 +73,7 @@ In the desktop app, **Settings → Daily research** can run research once a day 
 
 ## Data and source handling
 
-- Data lives in Electron's `userData` directory (`state.json`). Browser preview uses `.local-data/` or `WAYPOINT_DATA_DIR`.
+- Data lives in Electrobun's application-scoped `userData` directory (`state.json`). Browser preview uses `.local-data/` or `WAYPOINT_DATA_DIR`.
 - The app stores profile/research data as local JSON with atomic replacement and restrictive file modes where supported. **Profile data is not application-encrypted.** Device disk encryption is recommended for sensitive CVs.
 - Research runs are single-flight. Profile/AI-setting changes are blocked during a run to keep results tied to a stable input revision.
 - Results must satisfy a schema. Every imported role needs a public HTTPS source and non-empty evidence excerpt. Closed roles are excluded; duplicate company/title/location combinations are removed; inconsistent salary ranges reject the report.
@@ -88,7 +88,7 @@ In the desktop app, **Settings → Daily research** can run research once a day 
 ## Development and verification
 
 ```sh
-npm run build       # strict TypeScript checks + server compilation + frontend bundle
+npm run build       # strict TypeScript checks + browser-preview frontend bundle
 npm test            # service, schema, ranking, Jev contract, CLI subprocess, HTTP, CV extraction
 npx playwright install chromium
 npm run test:ui     # real-browser workflow tests, simulated AI provider
@@ -96,16 +96,16 @@ npm run test:ui     # real-browser workflow tests, simulated AI provider
 
 The UI suite uses an isolated temporary workspace and deletes it afterwards. It exercises navigation, filters, evidence, saved roles, application notes, feedback undo, local CV import, profile steps, research progress, source links, and narrow-screen layout. Screenshots go to `test-artifacts/`. `CHROMIUM_PATH` and `SCREENSHOT_DIR` are optional test-runner overrides.
 
-Validated in the implementation environment: production build, ten automated core tests, nineteen real-browser checks, and visual inspection of discovery/evidence/path/mobile screenshots. The Codex subprocess test uses a controlled executable; the Jev test uses simulated HTTP responses. **No authenticated live Codex or Jev call was made.** The environment does not support Electron's desktop singleton socket, so native-window launch could not be smoke-tested here. Run `npm start` on your target desktop before distributing builds.
+The Codex subprocess test uses a controlled executable; the Jev test uses simulated HTTP responses. **No authenticated live Codex or Jev call is made by the automated suite.** Electrobun builds must run on a native supported runner; the release workflow covers macOS ARM64, Windows x64, and Linux x64.
 
 ## Packaging
 
 ```sh
-npm run package    # unpacked desktop package for this platform
-npm run dist       # platform installer (DMG / NSIS / AppImage)
+npm run package    # stable Electrobun bundle and installer for this platform
+npm run dist       # alias for the stable package build
 ```
 
-Packaging configuration is included, but signed installers are not included in this source delivery. Build on the target OS, configure signing/notarisation for distribution, and verify the installed app with your actual CLI login and TypeSafe account. The default Electron icon is used; no automatic updater is configured.
+Electrobun produces a DMG on macOS ARM64, a Setup ZIP on Windows x64, and a self-extracting installer tarball on Linux. Release metadata points to GitHub Releases for updates. Signing and notarisation remain disabled until platform credentials are configured; verify each installed build with your actual CLI login and TypeSafe account before distribution.
 
 ## Project layout
 
@@ -118,7 +118,8 @@ Packaging configuration is included, but signed installers are not included in t
 | `server/codex.ts`, `server/schema.ts` | Codex subprocess, prompt, structured output validation |
 | `server/jev.ts` | TypeSafe typed questions and confidence gate |
 | `server/preview.ts` | Loopback-only development service and Vite preview |
-| `electron/main.ts`, `electron/preload.cts` | Native shell, isolated IPC, OS key encryption |
+| `desktop/main.ts`, `src/electrobun-entry.ts` | Electrobun shell, typed RPC, notifications, and scheduled research |
+| `electrobun.config.ts`, `hutch.config.ts` | Native packaging, runtime pin, and build tasks |
 | `tests/`, `scripts/verify-ui.mjs` | Core tests, fixtures, and browser workflow checks |
 
 ## Current boundaries
@@ -132,4 +133,4 @@ The next production gates are authenticated end-to-end research evaluation, prov
 - [Codex non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode): CLI invocation, JSON events, output schemas, ephemeral sessions, existing authentication.
 - [TypeSafe introduction](https://docs.typesafe.ai/introduction): Jev's typed decision model and atomic questions.
 - [TypeSafe quick start](https://docs.typesafe.ai/introduction/quickstart): endpoint, authentication, request/response shape, `jev-latest`.
-- [Electron security](https://www.electronjs.org/docs/latest/tutorial/security): renderer isolation, sandboxing, IPC sender checks, navigation restrictions, and CSP.
+- [Electrobun documentation](https://framework.blackboard.sh/electrobun/): system webviews, typed RPC, application paths, packaging, and updates.

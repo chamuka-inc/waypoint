@@ -2,6 +2,9 @@ node_modules/
 dist/
 dist-server/
 release/
+artifacts/
+build-electrobun/
+.hutch/
 .local-data/
 .env
 *.log

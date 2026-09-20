@@ -10,15 +10,16 @@
     "type": "git",
     "url": "https://github.com/chamuka-inc/waypoint.git"
   },
-  "main": "dist-server/electron/main.js",
   "scripts": {
     "dev": "node --import tsx server/preview.ts",
-    "build": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.server.json && vite build",
-    "start": "npm run build && electron .",
-    "desktop": "electron .",
+    "preview": "node --import tsx server/preview.ts",
+    "build": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.server.json && vite build",
+    "build:desktop:web": "electrobun prepare && vite build --config vite.electrobun.config.ts",
+    "start": "npm run build:desktop:web && electrobun dev",
+    "desktop": "npm start",
     "test": "node --import tsx --test tests/*.test.ts",
-    "package": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder",
+    "package": "npm run build:desktop:web && electrobun build --env=stable",
+    "dist": "npm run package",
     "test:ui": "node --import tsx scripts/verify-ui.mjs"
   },
   "dependencies": {
@@ -29,44 +30,11 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "electron": "^40.0.0",
-    "electron-builder": "^26.0.0",
+    "electrobun": "2.0.1",
     "playwright": "^1.63.0",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
     "vite": "^7.0.0"
-  },
-  "build": {
-    "appId": "app.waypoint.career",
-    "productName": "Waypoint",
-    "files": [
-      "dist/**/*",
-      "dist-server/**/*",
-      "package.json"
-    ],
-    "asarUnpack": [
-      "node_modules/@napi-rs/**/*"
-    ],
-    "directories": {
-      "output": "release"
-    },
-    "mac": {
-      "category": "public.app-category.productivity",
-      "target": [
-        "dmg"
-      ]
-    },
-    "win": {
-      "target": [
-        "nsis"
-      ]
-    },
-    "linux": {
-      "target": [
-        "AppImage"
-      ],
-      "category": "Office"
-    }
   },
   "engines": {
     "node": ">=22.16"
