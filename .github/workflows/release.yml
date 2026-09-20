@@ -40,8 +40,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 librsvg2-2
+          smoke_dir="$RUNNER_TEMP/waypoint-smoke"
+          mkdir -p "$smoke_dir"
+          tar --zstd -xf artifacts/stable-linux-x64-Waypoint.tar.zst -C "$smoke_dir"
           log="$RUNNER_TEMP/waypoint-desktop.log"
-          xvfb-run -a build-electrobun/stable-linux-x64/Waypoint/bin/launcher >"$log" 2>&1 &
+          xvfb-run -a "$smoke_dir/Waypoint/bin/launcher" >"$log" 2>&1 &
           app_pid=$!
           ready=0
           for _ in {1..20}; do
