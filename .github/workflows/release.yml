@@ -38,6 +38,29 @@ jobs:
         run: |
           go install github.com/wailsapp/wails/v2/cmd/wails@v2.16.0
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Import macOS Developer ID certificate
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          test -n "$MACOS_CERTIFICATE_P12_BASE64"
+          test -n "$MACOS_CERTIFICATE_PASSWORD"
+          certificate_path="$RUNNER_TEMP/developer-id.p12"
+          keychain_path="$RUNNER_TEMP/waypoint-signing.keychain-db"
+          keychain_password="$(openssl rand -base64 32)"
+          printf '%s' "$MACOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$certificate_path"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$certificate_path" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          identity="$(security find-identity -v -p codesigning "$keychain_path" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -1)"
+          test -n "$identity"
+          echo "MACOS_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "MACOS_KEYCHAIN_PATH=$keychain_path" >> "$GITHUB_ENV"
       - name: Verify application
         if: runner.os == 'Linux'
         run: npm test && npm run build && go test ./...
@@ -47,12 +70,37 @@ jobs:
       - name: Build macOS universal DMG
         if: runner.os == 'macOS'
         shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          test -n "$APPLE_ID"
+          test -n "$APPLE_APP_SPECIFIC_PASSWORD"
+          test -n "$APPLE_TEAM_ID"
           wails build -clean -platform darwin/universal
+          codesign --force --options runtime --timestamp --sign "$MACOS_SIGNING_IDENTITY" build/bin/Waypoint.app
+          codesign --verify --deep --strict --verbose=2 build/bin/Waypoint.app
           mkdir -p artifacts "$RUNNER_TEMP/waypoint-dmg"
           cp -R build/bin/Waypoint.app "$RUNNER_TEMP/waypoint-dmg/"
           ln -s /Applications "$RUNNER_TEMP/waypoint-dmg/Applications"
           hdiutil create -volname Waypoint -srcfolder "$RUNNER_TEMP/waypoint-dmg" -ov -format UDZO artifacts/Waypoint-macos-universal.dmg
+          codesign --force --timestamp --sign "$MACOS_SIGNING_IDENTITY" artifacts/Waypoint-macos-universal.dmg
+          xcrun notarytool submit artifacts/Waypoint-macos-universal.dmg \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          xcrun stapler staple artifacts/Waypoint-macos-universal.dmg
+          xcrun stapler validate artifacts/Waypoint-macos-universal.dmg
+          spctl --assess --type open --context context:primary-signature --verbose=2 artifacts/Waypoint-macos-universal.dmg
+      - name: Remove temporary macOS signing keychain
+        if: always() && runner.os == 'macOS'
+        shell: bash
+        run: |
+          if [ -n "${MACOS_KEYCHAIN_PATH:-}" ] && [ -f "$MACOS_KEYCHAIN_PATH" ]; then
+            security delete-keychain "$MACOS_KEYCHAIN_PATH"
+          fi
       - name: Build Windows installer
         if: runner.os == 'Windows'
         shell: pwsh

@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -127,15 +128,15 @@ func RunCodex(parent context.Context, state State, event func(string, *ResearchS
 	if err := os.WriteFile(schemaPath, researchSchema, 0o600); err != nil {
 		return ResearchResult{}, err
 	}
-	binary := os.Getenv("CODEX_BIN")
-	if binary == "" {
-		binary = "codex"
+	binary, err := resolveCodexBinary()
+	if err != nil {
+		return ResearchResult{}, err
 	}
 	command := exec.CommandContext(ctx, binary, "--search", "exec", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral", "--json", "--output-schema", schemaPath, "--output-last-message", outputPath, "-")
 	command.Dir = directory
 	command.Stdin = strings.NewReader(ResearchPrompt(state))
 	command.Stderr = io.Discard
-	command.Env = withoutEnvironment(os.Environ(), "TYPESAFE_API_KEY")
+	command.Env = codexCommandEnvironment(os.Environ(), binary)
 	stdout, err := command.StdoutPipe()
 	if err != nil {
 		return ResearchResult{}, err
@@ -553,6 +554,94 @@ func withoutEnvironment(environment []string, name string) []string {
 		}
 	}
 	return filtered
+}
+
+func resolveCodexBinary() (string, error) {
+	home, _ := os.UserHomeDir()
+	return resolveCodexBinaryWith(strings.TrimSpace(os.Getenv("CODEX_BIN")), exec.LookPath, home, runtime.GOOS)
+}
+
+func resolveCodexBinaryWith(override string, lookPath func(string) (string, error), home, goos string) (string, error) {
+	if override != "" {
+		binary, err := lookPath(override)
+		if err != nil {
+			return "", errors.New("CODEX_BIN does not point to an executable Codex CLI")
+		}
+		return binary, nil
+	}
+	if binary, err := lookPath("codex"); err == nil {
+		return binary, nil
+	}
+	for _, candidate := range codexCandidatePaths(home, goos) {
+		if isExecutableFile(candidate, goos) {
+			return candidate, nil
+		}
+	}
+	if goos == "darwin" || goos == "linux" {
+		matches, _ := filepath.Glob(filepath.Join(home, ".nvm", "versions", "node", "*", "bin", "codex"))
+		for index := len(matches) - 1; index >= 0; index-- {
+			if isExecutableFile(matches[index], goos) {
+				return matches[index], nil
+			}
+		}
+	}
+	return "", errors.New("could not find Codex. Install the Codex CLI, sign in with codex login, or set CODEX_BIN to its full path")
+}
+
+func codexCandidatePaths(home, goos string) []string {
+	if goos == "windows" {
+		return []string{
+			filepath.Join(os.Getenv("LOCALAPPDATA"), "Programs", "OpenAI", "Codex", "bin", "codex.exe"),
+		}
+	}
+	return []string{
+		filepath.Join(home, ".local", "bin", "codex"),
+		"/opt/homebrew/bin/codex",
+		"/usr/local/bin/codex",
+		filepath.Join(home, ".npm-global", "bin", "codex"),
+		filepath.Join(home, ".volta", "bin", "codex"),
+		filepath.Join(home, ".asdf", "shims", "codex"),
+		filepath.Join(home, ".bun", "bin", "codex"),
+		filepath.Join(home, "Library", "pnpm", "codex"),
+		filepath.Join(home, ".local", "share", "pnpm", "codex"),
+		filepath.Join(home, ".local", "share", "mise", "shims", "codex"),
+	}
+}
+
+func isExecutableFile(path, goos string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir() && (goos == "windows" || info.Mode().Perm()&0o111 != 0)
+}
+
+func codexCommandEnvironment(environment []string, binary string) []string {
+	filtered := withoutEnvironment(append([]string(nil), environment...), "TYPESAFE_API_KEY")
+	pathValue := environmentValue(filtered, "PATH")
+	directories := []string{filepath.Dir(binary)}
+	home, _ := os.UserHomeDir()
+	for _, candidate := range codexCandidatePaths(home, runtime.GOOS) {
+		directories = append(directories, filepath.Dir(candidate))
+	}
+	directories = append(directories, filepath.SplitList(pathValue)...)
+	seen := map[string]bool{}
+	pathParts := directories[:0]
+	for _, directory := range directories {
+		if directory != "" && !seen[directory] {
+			seen[directory] = true
+			pathParts = append(pathParts, directory)
+		}
+	}
+	filtered = withoutEnvironment(filtered, "PATH")
+	return append(filtered, "PATH="+strings.Join(pathParts, string(os.PathListSeparator)))
+}
+
+func environmentValue(environment []string, name string) string {
+	prefix := name + "="
+	for _, value := range environment {
+		if strings.HasPrefix(value, prefix) {
+			return strings.TrimPrefix(value, prefix)
+		}
+	}
+	return ""
 }
 
 func textValue(value any) string { text, _ := value.(string); return strings.TrimSpace(text) }

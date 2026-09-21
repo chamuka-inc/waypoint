@@ -110,6 +110,52 @@ func TestSafeURLAndResearchValidation(t *testing.T) {
 	}
 }
 
+func TestCodexDiscoveryWorksWithoutTheShellPath(t *testing.T) {
+	home := t.TempDir()
+	candidates := codexCandidatePaths(home, "darwin")
+	if !contains(candidates, "/usr/local/bin/codex") || !contains(candidates, "/opt/homebrew/bin/codex") {
+		t.Fatalf("macOS Homebrew paths are missing: %#v", candidates)
+	}
+	binary := filepath.Join(home, ".local", "bin", "codex")
+	if err := os.MkdirAll(filepath.Dir(binary), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	missing := func(string) (string, error) { return "", errors.New("not on PATH") }
+	resolved, err := resolveCodexBinaryWith("", missing, home, "darwin")
+	if err != nil || resolved != binary {
+		t.Fatalf("packaged app did not discover Codex outside PATH: %q %v", resolved, err)
+	}
+
+	environment := codexCommandEnvironment([]string{"PATH=/usr/bin:/bin", "TYPESAFE_API_KEY=secret", "SAFE=value"}, binary)
+	pathValue := environmentValue(environment, "PATH")
+	if !strings.HasPrefix(pathValue, filepath.Dir(binary)+string(os.PathListSeparator)) {
+		t.Fatalf("Codex directory was not prepended to PATH: %s", pathValue)
+	}
+	if environmentValue(environment, "TYPESAFE_API_KEY") != "" || environmentValue(environment, "SAFE") != "value" {
+		t.Fatalf("Codex environment was not filtered safely: %#v", environment)
+	}
+}
+
+func TestCodexDiscoveryHonoursExplicitOverride(t *testing.T) {
+	wanted := filepath.Join(t.TempDir(), "custom-codex")
+	lookup := func(name string) (string, error) {
+		if name == wanted {
+			return wanted, nil
+		}
+		return "", errors.New("not found")
+	}
+	resolved, err := resolveCodexBinaryWith(wanted, lookup, "", "darwin")
+	if err != nil || resolved != wanted {
+		t.Fatalf("CODEX_BIN override was not honoured: %q %v", resolved, err)
+	}
+	if _, err := resolveCodexBinaryWith("missing-codex", lookup, "", "darwin"); err == nil {
+		t.Fatal("invalid CODEX_BIN override was accepted")
+	}
+}
+
 func TestResearchSaveFailureIsReported(t *testing.T) {
 	release := make(chan struct{})
 	directory := t.TempDir()

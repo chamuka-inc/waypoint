@@ -108,7 +108,7 @@ npm run package    # native Wails application for this platform
 npm run dist       # equivalent local production build
 ```
 
-The GitHub Actions release workflow creates DMG, NSIS, and Debian artifacts on their native runners. Tagged builds attach them to the corresponding GitHub Release. The packages are currently unsigned; configure code signing and macOS notarisation before broad public distribution. No automatic updater is configured.
+The GitHub Actions release workflow creates DMG, NSIS, and Debian artifacts on their native runners. Tagged builds attach them to the corresponding GitHub Release. macOS builds require a Developer ID Application certificate and Apple notarisation credentials in the `MACOS_CERTIFICATE_P12_BASE64`, `MACOS_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` Actions secrets. The workflow signs the app and DMG with hardened runtime, submits the DMG to Apple's notary service, staples the ticket, and verifies the result before publishing. No automatic updater is configured.
 
 ## Project layout
 
