@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,11 +23,17 @@ type App struct {
 }
 
 func NewApp() (*App, error) {
-	config, err := os.UserConfigDir()
-	if err != nil {
-		return nil, err
+	directory := strings.TrimSpace(os.Getenv("WAYPOINT_DATA_DIR"))
+	if directory == "" {
+		config, err := os.UserConfigDir()
+		if err != nil {
+			return nil, err
+		}
+		directory = filepath.Join(config, "Waypoint")
+	} else if !filepath.IsAbs(directory) {
+		return nil, errors.New("WAYPOINT_DATA_DIR must be an absolute path")
 	}
-	service := waypoint.NewService(filepath.Join(config, "Waypoint"))
+	service := waypoint.NewService(directory)
 	if err := service.Init(); err != nil {
 		return nil, err
 	}

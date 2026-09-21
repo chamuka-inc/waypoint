@@ -187,6 +187,103 @@ func TestCorruptWorkspaceIsPreserved(t *testing.T) {
 	}
 }
 
+func TestLegacyJSONWorkspaceMigratesToSQLiteAndRemainsAsBackup(t *testing.T) {
+	directory := t.TempDir()
+	legacy := InitialState(false)
+	legacy.Profile = InitialState(true).Profile
+	legacy.Profile.Name = "Migrated Candidate"
+	data, err := json.MarshalIndent(legacy, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyPath := filepath.Join(directory, "state.json")
+	if err := os.WriteFile(legacyPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(directory)
+	if err := service.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if service.State().Profile.Name != "Migrated Candidate" {
+		t.Fatal("legacy profile was not imported")
+	}
+	service.Shutdown()
+	if _, err := os.Stat(databasePath(directory)); err != nil {
+		t.Fatalf("SQLite database was not created: %v", err)
+	}
+	preserved, err := os.ReadFile(legacyPath)
+	if err != nil || string(preserved) != string(data) {
+		t.Fatal("legacy state.json was not preserved byte-for-byte")
+	}
+	legacy.Profile.Name = "Stale Legacy Candidate"
+	stale, _ := json.Marshal(legacy)
+	if err := os.WriteFile(legacyPath, stale, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	restored := NewService(directory)
+	if err := restored.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Shutdown()
+	if restored.State().Profile.Name != "Migrated Candidate" {
+		t.Fatal("database did not take precedence after migration")
+	}
+}
+
+func TestSQLiteSaveIsTransactional(t *testing.T) {
+	directory := t.TempDir()
+	repository := NewSQLiteRepository(directory)
+	if err := repository.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	original := InitialState(true)
+	if err := repository.Save(original); err != nil {
+		t.Fatal(err)
+	}
+	invalid := cloneState(original)
+	invalid.Profile.Name = "Should Roll Back"
+	invalid.Saved = append(invalid.Saved, "missing-role")
+	if err := repository.Save(invalid); err == nil {
+		t.Fatal("invalid foreign-key reference was accepted")
+	}
+	loaded, found, err := repository.Load()
+	if err != nil || !found {
+		t.Fatalf("could not reload prior transaction: %v", err)
+	}
+	if loaded.Profile.Name != original.Profile.Name || contains(loaded.Saved, "missing-role") {
+		t.Fatal("failed transaction changed the stored workspace")
+	}
+}
+
+func TestSQLiteWorkspaceUsesRestrictedFilePermissions(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.Chmod(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	repository := NewSQLiteRepository(directory)
+	if err := repository.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer repository.Close()
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		info, err := os.Stat(databasePath(directory) + suffix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm()&0o077 != 0 {
+			t.Fatalf("workspace database file %q permissions are too broad: %o", suffix, info.Mode().Perm())
+		}
+	}
+	directoryInfo, err := os.Stat(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if directoryInfo.Mode().Perm()&0o077 != 0 {
+		t.Fatalf("workspace directory permissions are too broad: %o", directoryInfo.Mode().Perm())
+	}
+}
+
 func jsonMarshal(value any) ([]byte, error) {
 	return json.Marshal(value)
 }
