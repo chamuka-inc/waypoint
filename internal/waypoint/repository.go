@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -43,15 +44,7 @@ func (r *SQLiteRepository) Init() error {
 		return fmt.Errorf("protect workspace directory: %w", err)
 	}
 	path := filepath.Join(r.directory, databaseFilename)
-	databaseURL := url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
-	query := databaseURL.Query()
-	query.Add("_pragma", "foreign_keys(1)")
-	query.Add("_pragma", "busy_timeout(5000)")
-	query.Add("_pragma", "journal_mode(WAL)")
-	query.Add("_pragma", "synchronous(FULL)")
-	databaseURL.RawQuery = query.Encode()
-	dsn := databaseURL.String()
-	db, err := sql.Open("sqlite", dsn)
+	db, err := sql.Open("sqlite", sqliteDSN(path))
 	if err != nil {
 		return fmt.Errorf("open workspace database: %w", err)
 	}
@@ -537,3 +530,18 @@ func boolInt(value bool) int {
 }
 
 func databasePath(directory string) string { return filepath.Join(directory, databaseFilename) }
+
+func sqliteDSN(path string) string {
+	normalized := strings.ReplaceAll(filepath.ToSlash(path), "\\", "/")
+	if len(normalized) >= 2 && normalized[1] == ':' {
+		normalized = "/" + normalized
+	}
+	databaseURL := url.URL{Scheme: "file", Path: normalized}
+	query := databaseURL.Query()
+	query.Add("_pragma", "foreign_keys(1)")
+	query.Add("_pragma", "busy_timeout(5000)")
+	query.Add("_pragma", "journal_mode(WAL)")
+	query.Add("_pragma", "synchronous(FULL)")
+	databaseURL.RawQuery = query.Encode()
+	return databaseURL.String()
+}

@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,14 +37,7 @@ func (c *CatalogRepository) Init() error {
 		return err
 	}
 	path := filepath.Join(c.root, catalogFilename)
-	u := url.URL{Scheme: "file", Path: filepath.ToSlash(path)}
-	query := u.Query()
-	query.Add("_pragma", "foreign_keys(1)")
-	query.Add("_pragma", "busy_timeout(5000)")
-	query.Add("_pragma", "journal_mode(WAL)")
-	query.Add("_pragma", "synchronous(FULL)")
-	u.RawQuery = query.Encode()
-	db, err := sql.Open("sqlite", u.String())
+	db, err := sql.Open("sqlite", sqliteDSN(path))
 	if err != nil {
 		return err
 	}
