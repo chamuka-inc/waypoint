@@ -3,7 +3,7 @@ import { join, extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { initialState } from '../src/demo.js';
 import type { AppState, Profile, FeedbackKind, Application, ResearchResult, ResearchSourceActivity, ResearchSchedule } from '../src/types.js';
-import { parseProfile } from './schema.js';
+import { parseProfile, parseWorkspaceState } from './schema.js';
 import { runCodex, codexStatus } from './codex.js';
 import { assessWithJev } from './jev.js';
 
@@ -54,9 +54,7 @@ export class CareerService {
   isResearchActive() { return Boolean(this.active); }
   async importState(value: AppState) {
     if (this.active) throw new Error('Cancel active research before importing a workspace.');
-    if (value?.version !== 1 || !Array.isArray(value.roles) || !Array.isArray(value.runs) || !Array.isArray(value.families) || !Array.isArray(value.saved) || !Array.isArray(value.applications) || !Array.isArray(value.feedback) || !Array.isArray(value.questions)) throw new Error('The workspace backup is invalid or incompatible.');
-    parseProfile(value.profile);
-    this.state = structuredClone(value);
+    this.state = parseWorkspaceState(value);
     for (const run of this.state.runs) if (run.status === 'running') { run.status = 'failed'; run.error = 'The application closed before research finished.'; run.finishedAt = new Date().toISOString(); }
     this.capOpportunities();
     await this.persist(); return this.getState();

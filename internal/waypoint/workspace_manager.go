@@ -153,6 +153,9 @@ func (m *WorkspaceManager) Dispatch(method string, args []any) (any, error) {
 		if m.service == nil {
 			return nil, errors.New("workspace is not available")
 		}
+		if method == "startResearch" && m.backgroundService != nil && m.backgroundService != m.service {
+			return nil, errors.New("wait for research in the other workspace to finish")
+		}
 		return m.service.Dispatch(method, args)
 	}
 }
@@ -379,6 +382,18 @@ func (m *WorkspaceManager) DeletePermanently(id, confirmation string) (Workspace
 	if err != nil {
 		return WorkspaceBootstrap{}, err
 	}
+	if entry.RelativeDirectory != "." {
+		items, readErr := os.ReadDir(directory)
+		if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+			return WorkspaceBootstrap{}, readErr
+		}
+		allowed := map[string]bool{databaseFilename: true, databaseFilename + "-wal": true, databaseFilename + "-shm": true}
+		for _, item := range items {
+			if !allowed[item.Name()] {
+				return WorkspaceBootstrap{}, errors.New("the workspace directory contains unexpected files; nothing was deleted")
+			}
+		}
+	}
 	for _, suffix := range []string{"", "-wal", "-shm"} {
 		if err := os.Remove(filepath.Join(directory, databaseFilename) + suffix); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return WorkspaceBootstrap{}, err
@@ -431,7 +446,7 @@ type ScheduledWorkspaceRun struct {
 func (m *WorkspaceManager) StartNextScheduledResearch(now time.Time) (ScheduledWorkspaceRun, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.backgroundService != nil || m.service == nil {
+	if m.backgroundService != nil || m.service == nil || m.service.ActiveResearch() {
 		return ScheduledWorkspaceRun{}, false, nil
 	}
 	entries, err := m.catalog.Entries()

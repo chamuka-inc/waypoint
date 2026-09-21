@@ -319,7 +319,7 @@ root.addEventListener('click', async event => {
   if (button.dataset.feedback && selected) { await mutate('feedback', [selected, button.dataset.feedback], 'Got it. Your feedback will shape ranking and future research.'); return; }
   if (button.dataset.undo) { await mutate('undoFeedback', [button.dataset.undo], 'Feedback removed.'); return; }
   switch (button.dataset.action) {
-    case 'workspace-switcher': workspaceMenu = !workspaceMenu; render(); break;
+    case 'workspace-switcher': if (dirty && page === 'profile') captureProfile(); workspaceMenu = !workspaceMenu; render(); break;
     case 'close-workspaces': workspaceMenu = false; render(); break;
     case 'create-workspace': workspaceMenu = false; openDialog(); modal = 'create-workspace'; render(); break;
     case 'manage-workspaces': workspaceMenu = false; navigate('settings'); break;
@@ -381,6 +381,7 @@ root.addEventListener('submit', async event => {
   if (form.id === 'profile-form') { await saveProfile(); return; }
   if (form.id === 'workspace-create-form') {
     const mode = String(fd.get('mode')) as CreateWorkspaceInput['mode']; const input: CreateWorkspaceInput = { name: String(fd.get('name')), mode };
+    if (dirty && !confirm('Create and switch workspaces without saving your profile changes?')) return;
     try {
       if (mode === 'import') { const file = (form.elements.namedItem('import') as HTMLInputElement).files?.[0]; if (!file) throw new Error('Choose a Waypoint workspace export.'); if (file.size > 12_000_000) throw new Error('Choose an export smaller than 12 MB.'); input.state = JSON.parse(await file.text()) as AppState; }
       applyBootstrap(await call<WorkspaceBootstrap>('createWorkspace', input)); page = 'profile'; render(); toast(`${currentWorkspace.name} created.`);

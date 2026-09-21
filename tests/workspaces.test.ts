@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CareerService } from '../server/service.js';
@@ -35,6 +35,12 @@ test('preview workspace catalog persists isolated state and lifecycle changes', 
     await manager.lifecycle(copied.workspace.id, 'archive');
     await manager.lifecycle(copied.workspace.id, 'delete');
     await assert.rejects(manager.permanentlyDelete(copied.workspace.id, 'wrong'), /exactly/i);
+    const copiedDirectory = join(directory, 'workspaces', copied.workspace.id);
+    const unexpected = join(copiedDirectory, 'unexpected.txt');
+    await writeFile(unexpected, 'preserve me');
+    await assert.rejects(manager.permanentlyDelete(copied.workspace.id, 'Archived search'), /unexpected files/i);
+    assert.ok((await readFile(join(copiedDirectory, 'state.json'), 'utf8')).includes('Second Candidate'));
+    await rm(unexpected);
     const final = await manager.permanentlyDelete(copied.workspace.id, 'Archived search');
     assert.equal(final.workspaces.length, 1);
     const importedState = structuredClone(final.state); importedState.profile.name = 'Imported Candidate';

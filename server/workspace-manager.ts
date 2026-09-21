@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, rm, rmdir, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { basename, join, resolve } from 'node:path';
 import { initialState } from '../src/demo.js';
@@ -133,7 +133,12 @@ export class PreviewWorkspaceManager {
   async permanentlyDelete(id: string, confirmation: string) {
     const entry = this.entry(id); if (id === this.current.id) throw new Error('The current workspace cannot be deleted.');
     if (!entry.deletedAt || confirmation !== entry.name) throw new Error('Type the workspace name exactly to delete it permanently.');
-    if (entry.relativeDirectory !== '.') await rm(this.directory(entry), { recursive: true, force: true });
+    if (entry.relativeDirectory !== '.') {
+      const directory = this.directory(entry); const names = await readdir(directory).catch(error => (error as NodeJS.ErrnoException).code === 'ENOENT' ? [] : Promise.reject(error));
+      if (names.some(name => name !== 'state.json' && name !== 'state.tmp')) throw new Error('The workspace directory contains unexpected files; nothing was deleted.');
+      await rm(join(directory, 'state.json'), { force: true }); await rm(join(directory, 'state.tmp'), { force: true });
+      await rmdir(directory).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; });
+    }
     else { await rm(join(this.root, 'state.json'), { force: true }); await rm(join(this.root, 'state.tmp'), { force: true }); }
     this.catalog.workspaces = this.catalog.workspaces.filter(item => item.id !== id); await this.persistCatalog(); return this.bootstrap();
   }

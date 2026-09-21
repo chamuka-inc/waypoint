@@ -158,6 +158,9 @@ func (s *Service) ImportState(state State) (State, error) {
 	if s.activeCancel != nil {
 		return State{}, errors.New("cancel active research before importing a workspace")
 	}
+	if err := validateImportedState(state); err != nil {
+		return State{}, errors.New("the workspace backup is invalid or incompatible")
+	}
 	if err := prepareLoadedState(&state); err != nil {
 		return State{}, errors.New("the workspace backup is invalid or incompatible")
 	}
@@ -169,6 +172,96 @@ func (s *Service) ImportState(state State) (State, error) {
 		return State{}, err
 	}
 	return cloneState(s.state), nil
+}
+
+func validateImportedState(state State) error {
+	if state.Version != 1 || state.Roles == nil || state.Families == nil || state.Saved == nil || state.Applications == nil || state.Feedback == nil || state.Runs == nil || state.Questions == nil || state.Profile.Skills == nil || state.Profile.WorkModes == nil {
+		return errors.New("invalid workspace")
+	}
+	if len(state.Roles) > MaxOpportunities || len(state.Families) > 12 || len(state.Saved) > MaxOpportunities || len(state.Runs) > 30 || !validText(state.Summary, 12000) || !validStrings(state.Questions, 40) || state.ProfileRevision < 0 || state.ResearchRevision < 0 {
+		return errors.New("invalid workspace")
+	}
+	if err := validateProfile(state.Profile); err != nil || !modelPattern.MatchString(state.Settings.JevModel) || !schedulePattern.MatchString(state.Settings.ResearchSchedule.Time) {
+		return errors.New("invalid workspace")
+	}
+	if value := state.Settings.ResearchSchedule.LastRunAt; value != "" {
+		if _, err := time.Parse(time.RFC3339Nano, value); err != nil {
+			return errors.New("invalid workspace")
+		}
+	}
+	if err := validateWorkspaceFamilies(state.Families); err != nil {
+		return err
+	}
+
+	roleIDs := map[string]bool{}
+	for _, role := range state.Roles {
+		if role.ID == "" || roleIDs[role.ID] || role.Responsibilities == nil || role.Evidence == nil || role.Gaps == nil || role.NonBlockers == nil || role.Questions == nil || role.Strategy == nil || role.Interview == nil || role.Skills == nil || role.Sources == nil {
+			return errors.New("invalid workspace")
+		}
+		roleIDs[role.ID] = true
+		candidate := role
+		if candidate.Demo && len(candidate.Sources) == 0 {
+			candidate.Sources = []Source{{}}
+		}
+		if err := validateResearchStructure(ResearchResult{Summary: "Workspace import", Roles: []Opportunity{candidate}, Families: []RoleFamily{}, Questions: []string{}}); err != nil {
+			return errors.New("invalid workspace")
+		}
+		if role.Demo != state.Demo || (!role.Demo && len(role.Sources) == 0) || (role.SalaryMin != nil && role.SalaryMax != nil && *role.SalaryMin > *role.SalaryMax) {
+			return errors.New("invalid workspace")
+		}
+		for _, source := range role.Sources {
+			if SafeURL(source.URL) == "" || strings.TrimSpace(source.Excerpt) == "" {
+				return errors.New("invalid workspace")
+			}
+		}
+		if role.Jev != nil && (!validFit(role.Jev.Fit) || !probability(role.Jev.Confidence) || !probability(role.Jev.Supported) || !probability(role.Jev.Growth)) {
+			return errors.New("invalid workspace")
+		}
+	}
+
+	seenSaved := map[string]bool{}
+	for _, id := range state.Saved {
+		if !roleIDs[id] || seenSaved[id] {
+			return errors.New("invalid workspace")
+		}
+		seenSaved[id] = true
+	}
+	seenApplications := map[string]bool{}
+	for _, item := range state.Applications {
+		if !roleIDs[item.RoleID] || seenApplications[item.RoleID] || !oneOf(item.Stage, "Saved", "Preparing", "Applied", "Interview", "Offer") || !validText(item.Notes, 20000) || !validText(item.UpdatedAt, 12000) {
+			return errors.New("invalid workspace")
+		}
+		seenApplications[item.RoleID] = true
+	}
+	seenFeedback := map[string]bool{}
+	for _, item := range state.Feedback {
+		if item.ID == "" || seenFeedback[item.ID] || !roleIDs[item.RoleID] || item.Skills == nil || !oneOf(item.Kind, "more", "too-technical", "too-junior", "salary-low", "no-industry", "not-interested") || !validText(item.Company, 12000) || !validText(item.Title, 12000) || !validText(item.Industry, 12000) || !validStrings(item.Skills, 40) || !validText(item.CreatedAt, 12000) {
+			return errors.New("invalid workspace")
+		}
+		seenFeedback[item.ID] = true
+	}
+	seenRuns := map[string]bool{}
+	for _, run := range state.Runs {
+		if run.ID == "" || seenRuns[run.ID] || run.Events == nil || run.Count < 0 || !oneOf(run.Status, "running", "completed", "failed", "cancelled") || !validText(run.StartedAt, 12000) || !validText(run.FinishedAt, 12000) || !validText(run.Error, 12000) || !validStrings(run.Events, 60) || len(run.Sources) > 60 {
+			return errors.New("invalid workspace")
+		}
+		seenRuns[run.ID] = true
+		for _, source := range run.Sources {
+			if SafeURL(source.URL) == "" || !oneOf(source.Status, "found", "reviewing", "reviewed") || !validText(source.Title, 12000) || !validText(source.SeenAt, 12000) {
+				return errors.New("invalid workspace")
+			}
+		}
+	}
+	return nil
+}
+
+func validateWorkspaceFamilies(families []RoleFamily) error {
+	for _, family := range families {
+		if family.Skills == nil || family.Gaps == nil || family.SearchTerms == nil || family.Title == "" || !validText(family.Title, 12000) || !validText(family.Why, 12000) || !oneOf(family.Fit, "direct", "adjacent", "stretch") || !validStrings(family.Skills, 40) || !validStrings(family.Gaps, 40) || !validStrings(family.SearchTerms, 40) {
+			return errors.New("invalid workspace")
+		}
+	}
+	return nil
 }
 
 func (s *Service) persistLocked() error {

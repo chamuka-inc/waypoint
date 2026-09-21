@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { request } from 'node:http';
 import { initialState } from '../src/demo.js';
 import { constraints, priorityScore } from '../src/ranking.js';
-import { parseResearch, parseProfile, safeURL } from '../server/schema.js';
+import { parseResearch, parseProfile, parseWorkspaceState, safeURL } from '../server/schema.js';
 import { jevRequest, assessWithJev } from '../server/jev.js';
 import { CareerService, dispatch, MAX_OPPORTUNITIES, scheduleDue } from '../server/service.js';
 import { runCodex, webSearchUpdates } from '../server/codex.js';
@@ -34,6 +34,19 @@ test('source validation rejects missing evidence, unsafe URLs, duplicates, close
   const bad = result(); bad.roles[0].salaryMin = 500000;
   assert.throws(() => parseResearch(bad), /inconsistent salary/);
   assert.throws(() => parseResearch({ roles: [] }), /incomplete research/);
+});
+
+test('workspace import validation rejects incomplete nested data and unsafe sources', () => {
+  const incomplete = structuredClone(initialState()) as any;
+  incomplete.roles[0].sources = null;
+  assert.throws(() => parseWorkspaceState(incomplete), /invalid or incompatible/);
+  const unsafe = structuredClone(initialState());
+  unsafe.roles[0].sources = [{ url: 'http://unsafe.example.org/jobs/1', title: 'Unsafe', excerpt: 'Untrusted source', checkedAt: '' }];
+  assert.throws(() => parseWorkspaceState(unsafe), /invalid or incompatible/);
+  const dangling = structuredClone(initialState(false));
+  dangling.saved = ['missing-role'];
+  assert.throws(() => parseWorkspaceState(dangling), /invalid or incompatible/);
+  assert.deepEqual(parseWorkspaceState(initialState()), initialState());
 });
 
 test('preferences reject invalid profiles and expose constraints without hiding unknowns', () => {
