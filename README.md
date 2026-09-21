@@ -4,7 +4,7 @@ A personal career research desktop app. Bring your experience, preferences, and 
 
 [Website](https://chamuka-inc.github.io/waypoint/) · [Download the latest release](https://github.com/chamuka-inc/waypoint/releases/latest)
 
-**Implemented stack:** Wails 2 + Go, HTML/CSS/TypeScript, Vite, local Codex CLI, and TypeSafe Jev. Wails uses the operating system's webview, while the native service, persistence, scheduling, document parsing, and provider adapters run in a compiled Go binary. No Node runtime or bundled Chromium is included in the installed application.
+**Implemented stack:** Wails 2 + Go, SQLite, HTML/CSS/TypeScript, Vite, local Codex CLI, and TypeSafe Jev. Wails uses the operating system's webview, while the native service, persistence, scheduling, document parsing, and provider adapters run in a compiled Go binary. No Node runtime or bundled Chromium is included in the installed application.
 
 ## Run the desktop app
 
@@ -73,8 +73,9 @@ In the desktop app, **Settings → Daily research** can run research once a day 
 
 ## Data and source handling
 
-- Desktop data lives in the operating system's user configuration directory under `Waypoint/state.json`. Browser preview uses `.local-data/` or `WAYPOINT_DATA_DIR`.
-- The app stores profile/research data as local JSON with atomic replacement and restrictive file modes where supported. **Profile data is not application-encrypted.** Device disk encryption is recommended for sensitive CVs.
+- Desktop data lives in the operating system's user configuration directory under `Waypoint/waypoint.db`. Browser preview remains an isolated development service using `.local-data/state.json`. Developers can set an absolute `WAYPOINT_DATA_DIR` to isolate either runtime.
+- The desktop app stores profile and research data in a local SQLite database with transactional writes, foreign-key integrity, schema versioning, and restrictive file modes where supported. Nested evidence payloads remain JSON inside relational rows. **Profile data is not application-encrypted.** Device disk encryption is recommended for sensitive CVs.
+- On the first SQLite launch, a compatible legacy `Waypoint/state.json` is imported automatically and left unchanged as a recovery backup. Once `waypoint.db` contains a workspace, it is the source of truth.
 - Research runs are single-flight. Profile/AI-setting changes are blocked during a run to keep results tied to a stable input revision.
 - Results must satisfy a schema. Every imported role needs a public HTTPS source and non-empty evidence excerpt. Closed roles are excluded; duplicate company/title/location combinations are removed; inconsistent salary ranges reject the report.
 - URL and schema checks do not independently prove the vacancy or quotation. The UI explicitly calls this agent-checked evidence; human confirmation remains necessary. Inaccessible sources should produce unknowns or no result, not fictional vacancies.
@@ -82,7 +83,7 @@ In the desktop app, **Settings → Daily research** can run research once a day 
 - Unknown salary, work arrangement, exclusions, and uncertain Jev fit remain visible as separate checks. Remote is not assumed to mean worldwide.
 - Saved/application roles absent from a new run are retained and marked uncertain. Stable IDs preserve notes when the same role returns.
 - The opportunity workspace holds at most 50 roles. Newer research replaces the oldest roles and removes their associated shortlist, application, and feedback records.
-- Export your workspace or shortlist from Settings/Shortlist. Workspace export contains personal data but no stored API key. To restore a backup, quit the app, preserve the existing `state.json`, replace it with a compatible exported file, and relaunch. There is no in-app restore UI yet.
+- Export your workspace or shortlist from Settings/Shortlist. Workspace exports remain portable JSON and contain personal data but no stored API key. There is no in-app restore UI yet; see [`docs/persistence.md`](docs/persistence.md) for the recovery procedure.
 - “Start fresh” requires a confirmation in the app and clears candidate data; connection settings are retained.
 
 ## Development and verification
@@ -115,7 +116,7 @@ The GitHub Actions release workflow creates DMG, NSIS, and Debian artifacts on t
 | `src/app.ts`, `src/style.css` | Candidate workspace and responsive visual design |
 | `src/types.ts`, `src/ranking.ts` | Shared types, preference weighting, constraint checks |
 | `src/demo.ts` | Clearly fictional first-launch sample |
-| `internal/waypoint/` | Go persistence, CV parsing, application state, Codex/Jev adapters, and run lifecycle |
+| `internal/waypoint/` | Go SQLite repository, CV parsing, application state, Codex/Jev adapters, and run lifecycle |
 | `app.go`, `main.go` | Wails bridge, native window, scheduling, notifications, and external-link handling |
 | `server/` | Loopback-only browser preview and TypeScript reference service |
 | `tests/`, `scripts/verify-ui.mjs` | Core tests, fixtures, and browser workflow checks |

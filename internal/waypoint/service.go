@@ -30,6 +30,7 @@ type Researcher func(context.Context, State, func(string, *ResearchSourceActivit
 type Service struct {
 	mu           sync.RWMutex
 	directory    string
+	repository   WorkspaceRepository
 	state        State
 	activeCancel context.CancelFunc
 	researcher   Researcher
@@ -39,7 +40,11 @@ type Service struct {
 }
 
 func NewService(directory string) *Service {
-	return &Service{directory: directory, state: InitialState(true), researcher: RunCodex}
+	return NewServiceWithRepository(directory, NewSQLiteRepository(directory))
+}
+
+func NewServiceWithRepository(directory string, repository WorkspaceRepository) *Service {
+	return &Service{directory: directory, repository: repository, state: InitialState(true), researcher: RunCodex}
 }
 
 func NewServiceWithResearcher(directory string, researcher Researcher) *Service {
@@ -49,42 +54,78 @@ func NewServiceWithResearcher(directory string, researcher Researcher) *Service 
 }
 
 func (s *Service) Init() error {
-	if err := os.MkdirAll(s.directory, 0o700); err != nil {
-		return fmt.Errorf("create workspace: %w", err)
+	if err := s.repository.Init(); err != nil {
+		return fmt.Errorf("could not open your saved workspace. The existing database has been preserved: %w", err)
 	}
-	path := filepath.Join(s.directory, "state.json")
-	data, err := os.ReadFile(path)
-	if err == nil {
-		var loaded State
-		if json.Unmarshal(data, &loaded) != nil || loaded.Version != 1 || loaded.Roles == nil || loaded.Runs == nil || validateProfile(loaded.Profile) != nil {
-			return errors.New("could not read your saved workspace. The existing file has been preserved. Restore a valid state.json backup to continue")
-		}
-		defaults := InitialState(false).Settings
-		if loaded.Settings.JevModel == "" {
-			loaded.Settings.JevModel = defaults.JevModel
-		}
-		if !schedulePattern.MatchString(loaded.Settings.ResearchSchedule.Time) {
-			loaded.Settings.ResearchSchedule.Time = defaults.ResearchSchedule.Time
-		}
-		now := time.Now().UTC().Format(time.RFC3339Nano)
-		for index := range loaded.Runs {
-			if loaded.Runs[index].Status == "running" {
-				loaded.Runs[index].Status = "failed"
-				loaded.Runs[index].Error = "The application closed before research finished."
-				loaded.Runs[index].FinishedAt = now
-			}
-		}
-		s.state = loaded
-		s.capOpportunitiesLocked()
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return errors.New("could not read your saved workspace. The existing file has been preserved. Restore a valid state.json backup to continue")
+	loaded, found, err := s.repository.Load()
+	if err != nil {
+		_ = s.repository.Close()
+		return errors.New("could not read your saved workspace. The existing database has been preserved. Restore a compatible workspace backup to continue")
 	}
+	if !found {
+		loaded, found, err = s.loadLegacyState()
+		if err != nil {
+			_ = s.repository.Close()
+			return err
+		}
+		if !found {
+			loaded = InitialState(true)
+		}
+	}
+	if err := prepareLoadedState(&loaded); err != nil {
+		_ = s.repository.Close()
+		return errors.New("could not read your saved workspace. The existing data has been preserved. Restore a compatible workspace backup to continue")
+	}
+	s.state = loaded
+	s.capOpportunitiesLocked()
 	if key, err := keyring.Get("Waypoint", "typesafe-api-key"); err == nil {
 		s.sessionKey = key
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.persistLocked()
+	if err := s.persistLocked(); err != nil {
+		_ = s.repository.Close()
+		return err
+	}
+	return nil
+}
+
+func (s *Service) loadLegacyState() (State, bool, error) {
+	path := filepath.Join(s.directory, "state.json")
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return State{}, false, nil
+	}
+	if err != nil {
+		return State{}, false, errors.New("could not read your saved workspace. The existing state.json has been preserved")
+	}
+	var loaded State
+	if json.Unmarshal(data, &loaded) != nil {
+		return State{}, false, errors.New("could not read your saved workspace. The existing state.json has been preserved")
+	}
+	return loaded, true, nil
+}
+
+func prepareLoadedState(loaded *State) error {
+	if loaded.Version != 1 || loaded.Roles == nil || loaded.Families == nil || loaded.Saved == nil || loaded.Applications == nil || loaded.Feedback == nil || loaded.Runs == nil || loaded.Questions == nil || validateProfile(loaded.Profile) != nil {
+		return errors.New("invalid workspace")
+	}
+	defaults := InitialState(false).Settings
+	if loaded.Settings.JevModel == "" {
+		loaded.Settings.JevModel = defaults.JevModel
+	}
+	if !schedulePattern.MatchString(loaded.Settings.ResearchSchedule.Time) {
+		loaded.Settings.ResearchSchedule.Time = defaults.ResearchSchedule.Time
+	}
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	for index := range loaded.Runs {
+		if loaded.Runs[index].Status == "running" {
+			loaded.Runs[index].Status = "failed"
+			loaded.Runs[index].Error = "The application closed before research finished."
+			loaded.Runs[index].FinishedAt = now
+		}
+	}
+	return nil
 }
 
 func (s *Service) State() State {
@@ -97,18 +138,7 @@ func (s *Service) persistLocked() error {
 	if s.persistHook != nil {
 		return s.persistHook()
 	}
-	data, err := json.MarshalIndent(s.state, "", "  ")
-	if err != nil {
-		return err
-	}
-	temp := filepath.Join(s.directory, "state.tmp")
-	if err := os.WriteFile(temp, data, 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(temp, filepath.Join(s.directory, "state.json")); err != nil {
-		return err
-	}
-	return nil
+	return s.repository.Save(s.state)
 }
 
 func (s *Service) SaveProfile(profile Profile) (State, error) {
@@ -419,7 +449,7 @@ func (s *Service) Status() RuntimeStatus {
 			version = version[:120]
 		}
 	}
-	return RuntimeStatus{Desktop: true, Codex: err == nil, CodexVersion: version, JevConfigured: configured, Storage: "Device workspace"}
+	return RuntimeStatus{Desktop: true, Codex: err == nil, CodexVersion: version, JevConfigured: configured, Storage: "SQLite device workspace"}
 }
 
 func (s *Service) getKeyLocked() string {
@@ -436,6 +466,7 @@ func (s *Service) Shutdown() {
 	}
 	s.mu.Unlock()
 	s.wg.Wait()
+	_ = s.repository.Close()
 }
 
 func (s *Service) Dispatch(method string, args []any) (any, error) {
