@@ -298,6 +298,7 @@ window.addEventListener('beforeunload', event => { if (dirty) event.preventDefau
 async function boot() {
   try {
     state = await call('getState'); render();
+    window.dispatchEvent(new CustomEvent('waypoint-ready'));
     runtime = await call<RuntimeStatus>('status'); if (page === 'settings') render();
     setInterval(async () => {
       if (!activeRun()) return;
