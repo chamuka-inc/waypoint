@@ -1,9 +1,11 @@
 import { createServer } from 'node:http';
 import { resolve } from 'node:path';
-import { CareerService, dispatch } from './service.js';
+import { CareerService } from './service.js';
+import { PreviewWorkspaceManager } from './workspace-manager.js';
 
 export async function createPreview(options: { directory?: string; port?: number; service?: CareerService; vite?: boolean } = {}) {
   const service = options.service || await new CareerService(options.directory || process.env.WAYPOINT_DATA_DIR || resolve('.local-data')).init();
+  const manager = await new PreviewWorkspaceManager(service.directory, service).init();
   const vite = options.vite === false ? undefined : await (await import('vite')).createServer({ server: { middlewareMode: true }, appType: 'spa' });
   const server = createServer(async (req, res) => {
     const host = req.headers.host;
@@ -18,7 +20,7 @@ export async function createPreview(options: { directory?: string; port?: number
       try {
         for await (const chunk of req) { body += chunk; if (body.length > 12_000_000) throw new Error('Request too large.'); }
         const { method, args } = JSON.parse(body);
-        const result = await dispatch(service, method, args);
+        const result = await manager.dispatch(method, args);
         res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ result }));
       } catch (e) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: (e as Error).message })); }
       return;
@@ -27,7 +29,7 @@ export async function createPreview(options: { directory?: string; port?: number
     else { res.writeHead(404); res.end(); }
   });
   await new Promise<void>(resolve => server.listen(options.port ?? Number(process.env.PORT || 4173), '127.0.0.1', resolve));
-  return { server, service, close: async () => { await service.shutdown(); await vite?.close(); await new Promise<void>((resolve, reject) => server.close(e => e ? reject(e) : resolve())); } };
+  return { server, service, manager, close: async () => { await manager.shutdown(); await vite?.close(); await new Promise<void>((resolve, reject) => server.close(e => e ? reject(e) : resolve())); } };
 }
 if (process.argv[1]?.endsWith('preview.ts') || process.argv[1]?.endsWith('preview.js')) {
   const preview = await createPreview();

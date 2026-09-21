@@ -75,7 +75,7 @@ jobs:
           install -m 0644 build/appicon.png "$package/usr/share/icons/hicolor/256x256/apps/waypoint.png"
           cat > "$package/DEBIAN/control" <<'EOF'
           Package: waypoint
-          Version: 0.1.0
+          Version: 0.2.0
           Section: office
           Priority: optional
           Architecture: amd64

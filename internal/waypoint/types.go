@@ -183,6 +183,36 @@ type RuntimeStatus struct {
 	Storage       string `json:"storage"`
 }
 
+type WorkspaceSummary struct {
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	Current          bool   `json:"current"`
+	Demo             bool   `json:"demo"`
+	OpportunityCount int    `json:"opportunityCount"`
+	SavedCount       int    `json:"savedCount"`
+	ProfileComplete  bool   `json:"profileComplete"`
+	ResearchRunning  bool   `json:"researchRunning"`
+	CreatedAt        string `json:"createdAt"`
+	UpdatedAt        string `json:"updatedAt"`
+	LastOpenedAt     string `json:"lastOpenedAt"`
+	ArchivedAt       string `json:"archivedAt,omitempty"`
+	DeletedAt        string `json:"deletedAt,omitempty"`
+	Unavailable      bool   `json:"unavailable"`
+}
+
+type WorkspaceBootstrap struct {
+	Workspace  WorkspaceSummary   `json:"workspace"`
+	Workspaces []WorkspaceSummary `json:"workspaces"`
+	State      State              `json:"state"`
+	Epoch      uint64             `json:"epoch"`
+}
+
+type CreateWorkspaceInput struct {
+	Name  string `json:"name"`
+	Mode  string `json:"mode"`
+	State *State `json:"state,omitempty"`
+}
+
 //go:embed demo.json
 var demoJSON []byte
 

@@ -1,5 +1,5 @@
 import { createIcons, icons } from 'lucide';
-import type { AppState, Opportunity, Profile, Fit, FeedbackKind, Application, RuntimeStatus, ResearchRun } from './types.js';
+import type { AppState, Opportunity, Profile, Fit, FeedbackKind, Application, RuntimeStatus, ResearchRun, WorkspaceBootstrap, WorkspaceSummary, CreateWorkspaceInput } from './types.js';
 import { priorityScore, salary, constraints } from './ranking.js';
 import { blankProfile } from './demo.js';
 import './style.css';
@@ -17,7 +17,12 @@ let hideConflicts = false;
 let sort = 'priority';
 let selected: string | null = null;
 let detailTab = 'overview';
-let modal: 'filters' | 'new' | null = null;
+let modal: 'filters' | 'new' | 'create-workspace' | 'rename-workspace' | 'delete-workspace' | null = null;
+let currentWorkspace: WorkspaceSummary;
+let workspaces: WorkspaceSummary[] = [];
+let workspaceEpoch = 0;
+let workspaceMenu = false;
+let targetWorkspaceId = '';
 let profileStep = 'story';
 let draft: Profile | null = null;
 let dirty = false;
@@ -49,8 +54,9 @@ async function call<T = AppState>(method: string, ...args: unknown[]): Promise<T
 }
 async function mutate(method: string, args: unknown[] = [], message?: string) {
   if (busy) return;
+  const workspaceId = currentWorkspace.id;
   busy = true;
-  try { state = await call(method, ...args); render(); if (message) toast(message); }
+  try { const fresh = await call<AppState>(method, ...args); if (workspaceId !== currentWorkspace.id) return; state = fresh; render(); if (message) toast(message); }
   catch (e) { toast((e as Error).message); }
   finally { busy = false; }
 }
@@ -61,7 +67,7 @@ function activeRun() { return state.runs.find(r => r.status === 'running'); }
 function navigate(next: string) {
   if (dirty && page === 'profile' && next !== page && !confirm('Leave without saving your profile changes?')) return;
   if (next !== 'profile') { draft = null; dirty = false; }
-  page = next; selected = null; modal = null; query = ''; selectedRoleIds.clear(); render(); window.scrollTo(0, 0);
+  page = next; selected = null; modal = null; workspaceMenu = false; query = ''; selectedRoleIds.clear(); render(); window.scrollTo(0, 0);
 }
 function openDialog() { focusBeforeDialog = document.activeElement as HTMLElement; }
 function closeDialog() { selected = null; modal = null; render(); focusBeforeDialog?.focus(); }
@@ -75,10 +81,12 @@ function comparableSalary(r: Opportunity) { return r.currency === state.profile.
 
 function sidebar() {
   const nav = (id: string, glyph: string, count?: number) => `<button class="nav-item ${page === id ? 'active' : ''}" data-nav="${id}" ${page === id ? 'aria-current="page"' : ''}>${icon(glyph)}<span>${labels[id]}</span>${count ? `<small>${count}</small>` : ''}</button>`;
-  return `<aside class="sidebar"><a href="#" class="brand" data-nav="discover"><span class="brand-mark">${icon('route')}</span>waypoint<span class="brand-dot">.</span></a><div class="workspace-label">YOUR NEXT CHAPTER</div><nav aria-label="Main navigation">${nav('discover', 'compass')}${nav('paths', 'git-branch')}${nav('saved', 'bookmark', state.saved.length)}${nav('applications', 'briefcase-business', state.applications.length)}<div class="nav-separator"></div>${nav('profile', 'user-round')}${nav('research', 'activity')}</nav><div class="sidebar-bottom"><div class="agent-card"><div class="agent-icon">${icon('sparkles')}</div><strong>A little more possibility.</strong><p>Your next role might have a title you haven’t searched for.</p><button data-nav="paths">Explore your paths ${icon('arrow-up-right')}</button></div>${nav('settings', 'settings-2')}<button class="user-card" data-nav="profile"><span class="avatar">${esc((state.profile.name || 'You').split(' ').map(s => s[0]).slice(0, 2).join(''))}</span><span><strong>${esc(state.profile.name || 'Your workspace')}</strong><small>${state.demo ? 'Sample profile' : 'Personal workspace'}</small></span>${icon('chevrons-up-down')}</button></div></aside>`;
+  const active = workspaces.filter(item => !item.archivedAt && !item.deletedAt);
+  const popover = workspaceMenu ? `<div class="workspace-popover" role="menu" aria-label="Switch workspace"><div class="workspace-popover-title"><span>WORKSPACES</span><button class="icon-button" data-action="close-workspaces" aria-label="Close workspace menu">${icon('x')}</button></div>${active.map(item => `<button class="workspace-choice ${item.current ? 'current' : ''}" data-workspace-switch="${esc(item.id)}" role="menuitem" ${item.current ? 'aria-current="true"' : ''}><span class="workspace-choice-icon">${esc(item.name.slice(0, 1).toUpperCase())}</span><span><strong>${esc(item.name)}</strong><small>${item.demo ? 'Sample' : `${item.opportunityCount} opportunities`}</small></span>${item.current ? icon('check') : ''}</button>`).join('')}<div class="workspace-popover-actions"><button data-action="create-workspace">${icon('plus')}New workspace</button><button data-action="manage-workspaces">${icon('settings-2')}Manage workspaces</button></div></div>` : '';
+  return `<aside class="sidebar"><a href="#" class="brand" data-nav="discover"><span class="brand-mark">${icon('route')}</span>waypoint<span class="brand-dot">.</span></a><div class="workspace-label">YOUR NEXT CHAPTER</div><nav aria-label="Main navigation">${nav('discover', 'compass')}${nav('paths', 'git-branch')}${nav('saved', 'bookmark', state.saved.length)}${nav('applications', 'briefcase-business', state.applications.length)}<div class="nav-separator"></div>${nav('profile', 'user-round')}${nav('research', 'activity')}</nav><div class="sidebar-bottom"><div class="agent-card"><div class="agent-icon">${icon('sparkles')}</div><strong>A little more possibility.</strong><p>Your next role might have a title you haven’t searched for.</p><button data-nav="paths">Explore your paths ${icon('arrow-up-right')}</button></div>${nav('settings', 'settings-2')}${popover}<button class="user-card workspace-trigger" data-action="workspace-switcher" aria-haspopup="menu" aria-expanded="${workspaceMenu}"><span class="avatar">${esc(currentWorkspace.name.slice(0, 2).toUpperCase())}</span><span><strong>${esc(currentWorkspace.name)}</strong><small>${currentWorkspace.demo ? 'Sample workspace' : 'Local workspace'}</small></span>${icon('chevrons-up-down')}</button></div></aside>`;
 }
 function shell(content: string) {
-  return `${sidebar()}<div class="main-shell"><header class="topbar"><div class="breadcrumb">My workspace ${icon('chevron-right')} <strong>${labels[page]}</strong></div><div class="top-actions"><span class="local-status"><span></span>Local workspace</span><button class="icon-button" data-nav="settings" aria-label="AI connection settings">${icon('sliders-horizontal')}</button></div></header><main id="main">${state.demo ? `<div class="demo-banner"><span>${icon('flask-conical')} <strong>Take a look around.</strong> You’re exploring a sample profile and fictional opportunities.</span><button data-action="new">Make it yours ${icon('arrow-right')}</button></div>` : ''}${content}</main><footer class="footer"><span>${icon('route')} A career that feels like you.</span><span>Thoughtful research. Your decisions.</span></footer></div>${selected ? detailDrawer() : ''}${modal ? modalView() : ''}`;
+  return `${sidebar()}<div class="main-shell"><header class="topbar"><div class="breadcrumb">${esc(currentWorkspace.name)} ${icon('chevron-right')} <strong>${labels[page]}</strong></div><div class="top-actions"><span class="local-status"><span></span>Local workspace</span><button class="icon-button" data-nav="settings" aria-label="AI connection settings">${icon('sliders-horizontal')}</button></div></header><main id="main">${state.demo ? `<div class="demo-banner"><span>${icon('flask-conical')} <strong>Take a look around.</strong> You’re exploring a sample profile and fictional opportunities.</span><button data-action="new">Make it yours ${icon('arrow-right')}</button></div>` : ''}${content}</main><footer class="footer"><span>${icon('route')} A career that feels like you.</span><span>Thoughtful research. Your decisions.</span></footer></div>${selected ? detailDrawer() : ''}${modal ? modalView() : ''}`;
 }
 function compassArt() {
   return `<div class="compass-art" aria-hidden="true"><svg viewBox="0 0 390 210"><defs><linearGradient id="line" x1="0" x2="1"><stop offset="0" stop-color="#b2c7b3"/><stop offset="1" stop-color="#507a5d"/></linearGradient></defs><circle cx="238" cy="106" r="84" fill="none" stroke="#cfdbca"/><circle cx="238" cy="106" r="57" fill="none" stroke="#cfdbca" stroke-dasharray="3 5"/><path d="M21 178 C100 183 103 64 174 104 S246 158 291 65" fill="none" stroke="url(#line)" stroke-width="2" stroke-dasharray="5 5"/><circle cx="174" cy="104" r="5" fill="#607c65"/><circle cx="291" cy="65" r="6" fill="#375d43"/><path d="M238 83 L253 123 L238 115 L223 123 Z" fill="#355c44" transform="rotate(28 238 106)"/><circle cx="238" cy="106" r="28" fill="none" stroke="#a5bba3"/><text x="235" y="14" fill="#859984" font-size="10">N</text><text x="335" y="110" fill="#859984" font-size="10">E</text><text x="235" y="205" fill="#859984" font-size="10">S</text><text x="140" y="110" fill="#859984" font-size="10">W</text></svg><span class="art-label art-you">${icon('circle-dot')} Where you are</span><span class="art-label art-next">${icon('sparkles')} What’s possible</span></div>`;
@@ -162,7 +170,15 @@ function settingsPage() {
   const storageDescription = runtime?.desktop === false
     ? 'This browser preview uses an isolated local JSON workspace for development.'
     : 'Your profile, matches, notes, and feedback are stored transactionally in a local SQLite database.';
-  return `${pageHeading('YOUR WORKSPACE, YOUR WAY', 'A thoughtful setup', 'Connect your agents and understand where your information goes.')}<div class="settings-grid"><section class="form-panel"><div class="settings-title"><span class="integration-icon">${icon('terminal')}</span><div><h2>Codex</h2><p>Research & reasoning · local CLI process</p></div><span class="status-pill ${runtime?.codex ? 'completed' : ''}">${runtime ? runtime.codex ? 'Detected' : 'Not detected' : 'Checking…'}</span></div><p>The app starts your installed Codex CLI using your existing sign-in. Codex researches the market and writes the evidence-backed explanations.</p><div class="code-line">npm install -g @openai/codex<br>codex login</div><p class="small-note">${runtime?.codexVersion ? esc(runtime.codexVersion) : 'Restart Waypoint after installing Codex. If needed, set CODEX_BIN to its executable path.'} The CLI runs locally; inference and web search use your configured provider.</p><button class="button secondary" data-action="check-status">${icon('refresh-cw')}Check connection</button></section><section class="form-panel"><div class="settings-title"><span class="integration-icon jev">∵</span><div><h2>TypeSafe Jev</h2><p>Typed assessments · hosted API</p></div><span class="status-pill ${runtime?.jevConfigured ? 'completed' : ''}">${runtime?.jevConfigured ? 'Key configured' : 'Optional'}</span></div><p>Jev assesses fit type, essential-skill support, and growth alignment. Uncertain or conflicting classifications stay flagged for review.</p><form id="settings-form"><label class="form-field"><span>TypeSafe API key</span><input type="password" name="key" autocomplete="off" placeholder="${runtime?.jevConfigured ? 'Key configured · leave blank to keep it' : 'Enter your TypeSafe API key'}"></label><label class="form-field"><span>Model</span><input name="model" value="${esc(state.settings.jevModel)}"></label><label class="toggle-label"><input type="checkbox" name="enabled" ${state.settings.jevEnabled ? 'checked' : ''}><span>Use Jev in future research runs</span></label><p class="small-note">Enabling Jev sends skills, ambitions, role evidence, and preference feedback to TypeSafe. The raw CV and name are omitted, but evidence may contain personal details. Desktop keys use OS encryption when available; otherwise they stay in memory for this session.</p><button class="button primary" type="submit">Save AI settings ${icon('check')}</button></form></section><section class="form-panel"><div class="settings-title"><span class="integration-icon">${icon('calendar-clock')}</span><div><h2>Daily research</h2><p>Automatic searches · desktop notifications</p></div><span class="status-pill ${schedule.enabled ? 'completed' : ''}">${schedule.enabled ? 'Enabled' : 'Off'}</span></div><p>Research once each day at your chosen local time and notify you only when a genuinely new opportunity appears.</p><form id="schedule-form"><label class="toggle-label"><input type="checkbox" name="enabled" ${schedule.enabled ? 'checked' : ''}><span>Enable daily research</span></label><label class="form-field"><span>Local time</span><input type="time" name="time" value="${esc(schedule.time)}"></label><p class="small-note">Waypoint must remain open or minimized. Scheduled runs use your saved profile and configured Codex account; they never apply or contact anyone. ${schedule.lastRunAt ? `Last scheduled start: ${date(schedule.lastRunAt)}.` : ''}</p><button class="button primary" type="submit">Save schedule ${icon('check')}</button></form></section><section class="form-panel"><div class="settings-title"><span class="integration-icon">${icon('hard-drive')}</span><div><h2>Your data</h2><p>Local by default, under your control</p></div></div><p>${storageDescription} Profile data is not encrypted by the app; use your device’s disk encryption for protection.</p><div class="button-row"><button class="button secondary" data-action="export-data">${icon('download')}Export workspace</button><button class="button danger" data-action="new">${icon('rotate-ccw')}Start fresh</button></div></section><section class="form-panel"><div class="settings-title"><span class="integration-icon">${icon('message-circle-heart')}</span><div><h2>What you’ve taught Waypoint</h2><p>Feedback changes ranking and future research</p></div></div><div class="feedback-history">${state.feedback.length ? state.feedback.slice().reverse().map(f => `<div><span><strong>${feedbackLabels[f.kind]}</strong><small>${esc(f.title)} · ${esc(f.company)}</small></span><button class="icon-button" data-undo="${f.id}" aria-label="Undo ${esc(feedbackLabels[f.kind])}">${icon('undo-2')}</button></div>`).join('') : '<p class="small-note">Give feedback on an opportunity to start shaping the next search.</p>'}</div></section></div>`;
+  return `${pageHeading('YOUR WORKSPACE, YOUR WAY', 'A thoughtful setup', 'Connect your agents and understand where your information goes.')}<div class="settings-grid">${workspaceSettings()}<section class="form-panel"><div class="settings-title"><span class="integration-icon">${icon('terminal')}</span><div><h2>Codex</h2><p>Research & reasoning · local CLI process</p></div><span class="status-pill ${runtime?.codex ? 'completed' : ''}">${runtime ? runtime.codex ? 'Detected' : 'Not detected' : 'Checking…'}</span></div><p>The app starts your installed Codex CLI using your existing sign-in. Codex researches the market and writes the evidence-backed explanations.</p><div class="code-line">npm install -g @openai/codex<br>codex login</div><p class="small-note">${runtime?.codexVersion ? esc(runtime.codexVersion) : 'Restart Waypoint after installing Codex. If needed, set CODEX_BIN to its executable path.'} The CLI runs locally; inference and web search use your configured provider.</p><button class="button secondary" data-action="check-status">${icon('refresh-cw')}Check connection</button></section><section class="form-panel"><div class="settings-title"><span class="integration-icon jev">∵</span><div><h2>TypeSafe Jev</h2><p>Typed assessments · hosted API</p></div><span class="status-pill ${runtime?.jevConfigured ? 'completed' : ''}">${runtime?.jevConfigured ? 'Key configured' : 'Optional'}</span></div><p>Jev assesses fit type, essential-skill support, and growth alignment. Uncertain or conflicting classifications stay flagged for review.</p><form id="settings-form"><label class="form-field"><span>TypeSafe API key</span><input type="password" name="key" autocomplete="off" placeholder="${runtime?.jevConfigured ? 'Key configured · leave blank to keep it' : 'Enter your TypeSafe API key'}"></label><label class="form-field"><span>Model</span><input name="model" value="${esc(state.settings.jevModel)}"></label><label class="toggle-label"><input type="checkbox" name="enabled" ${state.settings.jevEnabled ? 'checked' : ''}><span>Use Jev in future research runs</span></label><p class="small-note">Enabling Jev sends skills, ambitions, role evidence, and preference feedback to TypeSafe. The raw CV and name are omitted, but evidence may contain personal details. Desktop keys use OS encryption when available; otherwise they stay in memory for this session.</p><button class="button primary" type="submit">Save AI settings ${icon('check')}</button></form></section><section class="form-panel"><div class="settings-title"><span class="integration-icon">${icon('calendar-clock')}</span><div><h2>Daily research</h2><p>Automatic searches · desktop notifications</p></div><span class="status-pill ${schedule.enabled ? 'completed' : ''}">${schedule.enabled ? 'Enabled' : 'Off'}</span></div><p>Research once each day at your chosen local time and notify you only when a genuinely new opportunity appears.</p><form id="schedule-form"><label class="toggle-label"><input type="checkbox" name="enabled" ${schedule.enabled ? 'checked' : ''}><span>Enable daily research</span></label><label class="form-field"><span>Local time</span><input type="time" name="time" value="${esc(schedule.time)}"></label><p class="small-note">Waypoint must remain open or minimized. Scheduled runs use your saved profile and configured Codex account; they never apply or contact anyone. ${schedule.lastRunAt ? `Last scheduled start: ${date(schedule.lastRunAt)}.` : ''}</p><button class="button primary" type="submit">Save schedule ${icon('check')}</button></form></section><section class="form-panel"><div class="settings-title"><span class="integration-icon">${icon('hard-drive')}</span><div><h2>Your data</h2><p>Local by default, under your control</p></div></div><p>${storageDescription} Profile data is not encrypted by the app; use your device’s disk encryption for protection.</p><div class="button-row"><button class="button secondary" data-action="export-data">${icon('download')}Export workspace</button><button class="button danger" data-action="new">${icon('rotate-ccw')}Start fresh</button></div></section><section class="form-panel"><div class="settings-title"><span class="integration-icon">${icon('message-circle-heart')}</span><div><h2>What you’ve taught Waypoint</h2><p>Feedback changes ranking and future research</p></div></div><div class="feedback-history">${state.feedback.length ? state.feedback.slice().reverse().map(f => `<div><span><strong>${feedbackLabels[f.kind]}</strong><small>${esc(f.title)} · ${esc(f.company)}</small></span><button class="icon-button" data-undo="${f.id}" aria-label="Undo ${esc(feedbackLabels[f.kind])}">${icon('undo-2')}</button></div>`).join('') : '<p class="small-note">Give feedback on an opportunity to start shaping the next search.</p>'}</div></section></div>`;
+}
+function workspaceSettings() {
+  const groups = [
+    ['ACTIVE', workspaces.filter(item => !item.archivedAt && !item.deletedAt)],
+    ['ARCHIVED', workspaces.filter(item => item.archivedAt && !item.deletedAt)],
+    ['RECENTLY DELETED', workspaces.filter(item => item.deletedAt)],
+  ] as const;
+  return `<section class="form-panel workspace-manager-card"><div class="settings-title"><span class="integration-icon">${icon('layers-3')}</span><div><h2>Workspaces</h2><p>Separate profiles, research and shortlists</p></div><button class="button secondary" data-action="create-workspace">${icon('plus')}New</button></div><p>Each workspace has its own local data. Switching never combines profiles or opportunity histories.</p>${groups.map(([label, items]) => items.length ? `<div class="workspace-group"><span>${label}</span>${items.map(item => `<div class="workspace-manage-row"><span class="workspace-choice-icon">${esc(item.name.slice(0, 1).toUpperCase())}</span><span><strong>${esc(item.name)}${item.current ? ' · Current' : ''}</strong><small>${item.unavailable ? 'Unavailable' : `${item.opportunityCount} opportunities · ${item.savedCount} saved`}</small></span><div>${!item.current && !item.archivedAt && !item.deletedAt ? `<button data-workspace-switch="${esc(item.id)}">Open</button>` : ''}${!item.deletedAt ? `<button data-workspace-action="rename" data-workspace-id="${esc(item.id)}">Rename</button><button data-workspace-action="export" data-workspace-id="${esc(item.id)}">Export</button>` : ''}${!item.current && !item.archivedAt && !item.deletedAt ? `<button data-workspace-action="archive" data-workspace-id="${esc(item.id)}">Archive</button>` : ''}${item.archivedAt && !item.deletedAt ? `<button data-workspace-action="restore" data-workspace-id="${esc(item.id)}">Restore</button>` : ''}${!item.current && !item.deletedAt ? `<button class="danger-link" data-workspace-action="delete" data-workspace-id="${esc(item.id)}">Delete</button>` : ''}${item.deletedAt ? `<button data-workspace-action="restore" data-workspace-id="${esc(item.id)}">Restore</button><button class="danger-link" data-workspace-action="permanent" data-workspace-id="${esc(item.id)}">Delete permanently</button>` : ''}</div></div>`).join('')}</div>` : '').join('')}</section>`;
 }
 function detailDrawer() {
   const role = state.roles.find(r => r.id === selected);
@@ -175,10 +191,29 @@ function detailDrawer() {
 function list(items: string[], ordered = false) { const tag = ordered ? 'ol' : 'ul'; return `<${tag} class="detail-list">${items.map(x => `<li>${esc(x)}</li>`).join('') || '<li>No additional details were reported.</li>'}</${tag}>`; }
 function modalView() {
   const modes = [{ value: 'all', label: 'All arrangements' }, ...['Remote', 'Hybrid', 'On-site'].map(value => ({ value, label: value }))];
+  const target = workspaces.find(item => item.id === targetWorkspaceId);
+  if (modal === 'create-workspace') return `<div class="overlay centered" data-backdrop="true"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button class="icon-button modal-close" data-action="close" aria-label="Close dialog">${icon('x')}</button><span class="mini-label">A FRESH POINT OF VIEW</span><h2 id="modal-title">Create a workspace.</h2><p>Keep another career direction, person, or search completely separate.</p><form id="workspace-create-form"><label class="form-field"><span>Workspace name</span><input name="name" maxlength="80" required autofocus placeholder="Climate product search"></label><fieldset class="workspace-start-options"><legend>Start with</legend><label><input type="radio" name="mode" value="blank" checked><span><strong>Blank workspace</strong><small>A clean profile and no opportunities</small></span></label><label><input type="radio" name="mode" value="copy"><span><strong>Copy profile & preferences</strong><small>No research, shortlist or notes</small></span></label><label><input type="radio" name="mode" value="import"><span><strong>Import an export</strong><small>Restore a Waypoint workspace JSON file</small></span></label></fieldset><label class="form-field workspace-import"><span>Workspace export</span><input type="file" name="import" accept="application/json,.json"><small>Required only when importing.</small></label><button class="button primary full-width" type="submit">Create & switch ${icon('arrow-right')}</button></form></section></div>`;
+  if (modal === 'rename-workspace') return `<div class="overlay centered" data-backdrop="true"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button class="icon-button modal-close" data-action="close" aria-label="Close dialog">${icon('x')}</button><span class="mini-label">WORKSPACE NAME</span><h2 id="modal-title">Rename workspace.</h2><form id="workspace-rename-form"><label class="form-field"><span>Name</span><input name="name" maxlength="80" required autofocus value="${esc(target?.name || '')}"></label><button class="button primary full-width" type="submit">Save name ${icon('check')}</button></form></section></div>`;
+  if (modal === 'delete-workspace') return `<div class="overlay centered" data-backdrop="true"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button class="icon-button modal-close" data-action="close" aria-label="Close dialog">${icon('x')}</button><span class="mini-label">PERMANENT DELETION</span><h2 id="modal-title">Delete ${esc(target?.name || 'workspace')}?</h2><p>This removes its profile, opportunities, notes and research history from this device. This cannot be undone.</p><form id="workspace-delete-form"><label class="form-field"><span>Type <strong>${esc(target?.name || '')}</strong> to confirm</span><input name="confirmation" required autocomplete="off"></label><button class="button danger full-width" type="submit">Delete permanently</button></form></section></div>`;
   return `<div class="overlay centered" data-backdrop="true"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button class="icon-button modal-close" data-action="close" aria-label="Close dialog">${icon('x')}</button>${modal === 'filters' ? `<span class="mini-label">ON YOUR TERMS</span><h2 id="modal-title">A little more focus.</h2><p>Find the opportunities that work for your life.</p><form id="filter-form"><div class="form-field"><span>Work arrangement</span>${selectControl('filter-mode', 'Work arrangement', modeFilter, modes, 'name="mode"')}</div><label class="check-row"><input name="salary" type="checkbox" ${salaryFilter ? 'checked' : ''}><span>Salary meets my minimum<small>Only disclosed annual salaries in ${state.profile.currency}. Unknowns are excluded.</small></span></label><label class="check-row"><input name="conflicts" type="checkbox" ${hideConflicts ? 'checked' : ''}><span>Hide salary, arrangement, and industry conflicts<small>Also excludes roles with missing salary or uncertain Jev fit.</small></span></label><button class="button primary full-width" type="submit">Show opportunities ${icon('arrow-right')}</button></form>` : `<span class="mini-label">YOUR NEXT CHAPTER</span><h2 id="modal-title">Let’s make it yours.</h2><p>${state.demo ? 'Start with a blank profile. The sample opportunities will be removed so your research is grounded in your own experience.' : 'This clears your profile, research, shortlist, application notes, and feedback. Your AI connection settings are kept.'}</p>${!state.demo ? '<button class="button secondary full-width" data-action="export-data">Export my workspace first</button>' : ''}<button class="button primary full-width" data-action="confirm-new">${state.demo ? 'Create my profile' : 'Clear workspace & start fresh'} ${icon('arrow-right')}</button>`}</section></div>`;
 }
 
+function applyBootstrap(bootstrap: WorkspaceBootstrap) {
+  state = bootstrap.state; currentWorkspace = bootstrap.workspace; workspaces = bootstrap.workspaces; workspaceEpoch = bootstrap.epoch;
+  selected = null; selectedRoleIds.clear(); draft = null; dirty = false; modal = null; workspaceMenu = false; query = ''; fitFilter = 'all'; modeFilter = 'all'; salaryFilter = false; hideConflicts = false;
+}
+async function switchWorkspace(id: string) {
+  if (id === currentWorkspace.id) { workspaceMenu = false; render(); return; }
+  if (dirty && !confirm('Switch workspaces without saving your profile changes?')) return;
+  if (activeRun()) { toast('Stop research before switching workspaces.'); return; }
+  busy = true;
+  try { applyBootstrap(await call<WorkspaceBootstrap>('switchWorkspace', id)); page = 'discover'; render(); toast(`Switched to ${currentWorkspace.name}.`); }
+  catch (e) { toast((e as Error).message); }
+  finally { busy = false; }
+}
+
 function render() {
+  currentWorkspace.opportunityCount = state.roles.length; currentWorkspace.savedCount = state.saved.length; currentWorkspace.demo = state.demo; currentWorkspace.profileComplete = Boolean(state.profile.name.trim() && state.profile.background.trim()); currentWorkspace.researchRunning = Boolean(activeRun());
   for (const id of selectedRoleIds) if (!state.roles.some(role => role.id === id)) selectedRoleIds.delete(id);
   const views: Record<string, () => string> = { discover, paths: pathsPage, saved: savedPage, applications: applicationsPage, profile: profilePage, research: researchPage, settings: settingsPage };
   root.innerHTML = shell(views[page]());
@@ -262,6 +297,18 @@ root.addEventListener('click', async event => {
   }
   closeSelectControls();
   const button = target.closest<HTMLElement>('button,a'); if (!button) return;
+  if (button.dataset.workspaceSwitch) { await switchWorkspace(button.dataset.workspaceSwitch); return; }
+  if (button.dataset.workspaceAction && button.dataset.workspaceId) {
+    const action = button.dataset.workspaceAction; const id = button.dataset.workspaceId; targetWorkspaceId = id;
+    if (action === 'export') { try { const exported = await call<AppState>('exportWorkspace', id); const name = workspaces.find(item => item.id === id)?.name || 'workspace'; download(`waypoint-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.json`, JSON.stringify(exported, null, 2), 'application/json'); toast('Workspace exported.'); } catch (e) { toast((e as Error).message); } return; }
+    if (action === 'rename') { openDialog(); modal = 'rename-workspace'; render(); return; }
+    if (action === 'permanent') { openDialog(); modal = 'delete-workspace'; render(); return; }
+    if (action === 'delete' && !confirm('Move this workspace to Recently deleted? You can restore it later.')) return;
+    const methods: Record<string, string> = { archive: 'archiveWorkspace', restore: 'restoreWorkspace', delete: 'deleteWorkspace' };
+    try { applyBootstrap(await call<WorkspaceBootstrap>(methods[action], id)); render(); toast(action === 'restore' ? 'Workspace restored.' : action === 'archive' ? 'Workspace archived.' : 'Workspace moved to Recently deleted.'); }
+    catch (e) { toast((e as Error).message); }
+    return;
+  }
   if (button.dataset.nav) { event.preventDefault(); navigate(button.dataset.nav); return; }
   if (button.dataset.role) { openDialog(); selected = button.dataset.role; detailTab = 'overview'; render(); return; }
   if (button.dataset.save) { await mutate('toggleSave', [button.dataset.save]); return; }
@@ -272,6 +319,10 @@ root.addEventListener('click', async event => {
   if (button.dataset.feedback && selected) { await mutate('feedback', [selected, button.dataset.feedback], 'Got it. Your feedback will shape ranking and future research.'); return; }
   if (button.dataset.undo) { await mutate('undoFeedback', [button.dataset.undo], 'Feedback removed.'); return; }
   switch (button.dataset.action) {
+    case 'workspace-switcher': if (dirty && page === 'profile') captureProfile(); workspaceMenu = !workspaceMenu; render(); break;
+    case 'close-workspaces': workspaceMenu = false; render(); break;
+    case 'create-workspace': workspaceMenu = false; openDialog(); modal = 'create-workspace'; render(); break;
+    case 'manage-workspaces': workspaceMenu = false; navigate('settings'); break;
     case 'new': openDialog(); modal = 'new'; render(); break;
     case 'confirm-new':
       try { state = await call('reset'); modal = null; draft = structuredClone(blankProfile); dirty = false; page = 'profile'; profileStep = 'story'; render(); } catch (e) { toast((e as Error).message); } break;
@@ -328,6 +379,23 @@ root.addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.target as HTMLFormElement; const fd = new FormData(form);
   if (form.id === 'profile-form') { await saveProfile(); return; }
+  if (form.id === 'workspace-create-form') {
+    const mode = String(fd.get('mode')) as CreateWorkspaceInput['mode']; const input: CreateWorkspaceInput = { name: String(fd.get('name')), mode };
+    if (dirty && !confirm('Create and switch workspaces without saving your profile changes?')) return;
+    try {
+      if (mode === 'import') { const file = (form.elements.namedItem('import') as HTMLInputElement).files?.[0]; if (!file) throw new Error('Choose a Waypoint workspace export.'); if (file.size > 12_000_000) throw new Error('Choose an export smaller than 12 MB.'); input.state = JSON.parse(await file.text()) as AppState; }
+      applyBootstrap(await call<WorkspaceBootstrap>('createWorkspace', input)); page = 'profile'; render(); toast(`${currentWorkspace.name} created.`);
+    } catch (e) { toast((e as Error).message); }
+    return;
+  }
+  if (form.id === 'workspace-rename-form') {
+    try { applyBootstrap(await call<WorkspaceBootstrap>('renameWorkspace', targetWorkspaceId, String(fd.get('name')))); render(); toast('Workspace renamed.'); } catch (e) { toast((e as Error).message); }
+    return;
+  }
+  if (form.id === 'workspace-delete-form') {
+    try { applyBootstrap(await call<WorkspaceBootstrap>('deleteWorkspacePermanently', targetWorkspaceId, String(fd.get('confirmation')))); render(); toast('Workspace permanently deleted.'); } catch (e) { toast((e as Error).message); }
+    return;
+  }
   if (form.id === 'filter-form') { modeFilter = String(fd.get('mode')); salaryFilter = fd.has('salary'); hideConflicts = fd.has('conflicts'); closeDialog(); return; }
   if (form.id === 'settings-form') {
     try { state = await call('settings', { ...state.settings, jevEnabled: fd.has('enabled'), jevModel: String(fd.get('model')).trim() }, String(fd.get('key')).trim() || undefined); runtime = await call<RuntimeStatus>('status'); render(); toast('AI settings saved.'); } catch (e) { toast((e as Error).message); }
@@ -353,6 +421,7 @@ document.addEventListener('keydown', event => {
     if (event.key === 'Home' || event.key === 'End') { event.preventDefault(); options[event.key === 'Home' ? 0 : options.length - 1]?.focus(); return; }
     if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); (keyTarget as HTMLButtonElement).click(); return; }
   }
+  if (event.key === 'Escape' && workspaceMenu) { workspaceMenu = false; render(); return; }
   if (event.key === 'Escape' && (selected || modal)) closeDialog();
   if (event.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes((event.target as HTMLElement).tagName)) { const search = document.querySelector<HTMLInputElement>('#search'); if (search) { event.preventDefault(); search.focus(); } }
   if (event.key === 'Tab' && (selected || modal)) {
@@ -362,16 +431,23 @@ document.addEventListener('keydown', event => {
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
   }
 });
+document.addEventListener('click', event => {
+  if (!workspaceMenu) return;
+  const target = event.target as HTMLElement;
+  if (target.closest('.workspace-popover') || target.closest('[data-action="workspace-switcher"]')) return;
+  workspaceMenu = false; render();
+});
 window.addEventListener('beforeunload', event => { if (dirty) event.preventDefault(); });
 async function boot() {
   try {
-    state = await call('getState'); render();
+    applyBootstrap(await call<WorkspaceBootstrap>('bootstrap')); render();
     document.body.classList.add('app-ready');
     window.dispatchEvent(new CustomEvent('waypoint-ready'));
     runtime = await call<RuntimeStatus>('status'); if (page === 'settings') render();
     setInterval(async () => {
       if (!activeRun()) return;
-      try { const fresh = await call<AppState>('getState'); const completed = !fresh.runs.some(r => r.status === 'running'); state = fresh; if (!selected && !modal && page !== 'profile') render(); if (completed) toast(fresh.runs[0].status === 'completed' ? 'Your research is ready to explore.' : fresh.runs[0].error || 'Research stopped.'); } catch { /* transient fetch failure leaves last-known state visible */ }
+      const workspaceId = currentWorkspace.id; const epoch = workspaceEpoch;
+      try { const fresh = await call<AppState>('getState'); if (workspaceId !== currentWorkspace.id || epoch !== workspaceEpoch) return; const completed = !fresh.runs.some(r => r.status === 'running'); state = fresh; if (!selected && !modal && page !== 'profile') render(); if (completed) toast(fresh.runs[0].status === 'completed' ? 'Your research is ready to explore.' : fresh.runs[0].error || 'Research stopped.'); } catch { /* transient fetch failure leaves last-known state visible */ }
     }, 1800);
   } catch (e) { document.body.classList.add('app-ready'); root.innerHTML = `<div class="startup-error"><h1>Let’s get Waypoint running.</h1><p>${esc((e as Error).message)}</p><p>Start the local app with <code>npm run dev</code> or <code>npm start</code>, then reload.</p></div>`; }
 }
