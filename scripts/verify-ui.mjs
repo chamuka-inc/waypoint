@@ -50,6 +50,7 @@ try {
   const sortSelect = page.locator('[data-select-control="sort"]');
   await sortSelect.locator('.select-trigger').click();
   check(await sortSelect.locator('.select-menu').isVisible(), 'Branded select menu opens instead of the native platform popup');
+  check(await sortSelect.locator('[role="option"][tabindex="0"]').count() === 1, 'Select exposes a single keyboard tab stop');
   await page.screenshot({ animations: 'disabled', path: join(shots, 'waypoint-select.png') });
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');

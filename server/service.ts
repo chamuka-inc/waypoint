@@ -212,14 +212,15 @@ export class CareerService {
     let text = '';
     if (extension === '.pdf') {
       const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
-      const document = await getDocument({ data: new Uint8Array(buffer), useSystemFonts: true }).promise;
+      const loadingTask = getDocument({ data: new Uint8Array(buffer), useSystemFonts: true });
+      const document = await loadingTask.promise;
       try {
         if (document.numPages > 40) throw new Error('CVs are limited to 40 pages.');
         for (let i = 1; i <= document.numPages; i++) {
           const page = await document.getPage(i); const content = await page.getTextContent();
           text += content.items.map(item => 'str' in item ? item.str + (item.hasEOL ? '\n' : ' ') : '').join('') + '\n';
         }
-      } finally { await document.destroy(); }
+      } finally { await loadingTask.destroy(); }
     } else if (extension === '.docx') {
       const mammoth = await import('mammoth'); text = (await mammoth.extractRawText({ buffer })).value;
     } else if (['.txt', '.md'].includes(extension)) text = buffer.toString('utf8');

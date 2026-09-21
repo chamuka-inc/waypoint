@@ -151,6 +151,7 @@ func RunCodex(parent context.Context, state State, event func(string, *ResearchS
 		bytesRead += len(scanner.Bytes())
 		if bytesRead > 12*1024*1024 {
 			_ = command.Process.Kill()
+			_ = command.Wait()
 			return ResearchResult{}, errors.New("research output exceeded the size limit")
 		}
 		var record map[string]any
@@ -173,12 +174,16 @@ func RunCodex(parent context.Context, state State, event func(string, *ResearchS
 			failure = "Codex could not complete the research. Check CLI authentication, network access, and account limits."
 		}
 	}
+	scanErr := scanner.Err()
 	waitErr := command.Wait()
 	if parent.Err() != nil {
 		return ResearchResult{}, errors.New("research cancelled")
 	}
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return ResearchResult{}, errors.New("research reached the 12-minute limit. Try a more focused profile or search area")
+	}
+	if scanErr != nil {
+		return ResearchResult{}, errors.New("could not read Codex research progress. Please run it again")
 	}
 	if waitErr != nil || failure != "" {
 		if failure != "" {
@@ -411,7 +416,18 @@ func (s *Service) executeResearch(ctx context.Context, snapshot State, runID str
 	}
 	run.FinishedAt = nowISO()
 	s.activeCancel = nil
-	_ = s.persistLocked()
+	if persistErr := s.persistLocked(); persistErr != nil {
+		message := "Research finished but the workspace could not be saved. Check available disk space."
+		if run.Status == "completed" {
+			run.Status = "failed"
+			run.Error = message
+		} else if run.Error == "" {
+			run.Error = message
+		} else {
+			run.Error += " " + message
+		}
+		appendRunEvent(run, message)
+	}
 }
 
 func (s *Service) CancelResearch() (State, error) {
@@ -557,28 +573,28 @@ func validateResearchStructure(result ResearchResult) error {
 	invalid := func() error {
 		return errors.New("Codex returned an incomplete research report. No opportunities were imported")
 	}
-	if len(result.Summary) > 12000 || !validStrings(result.Questions, 40) {
+	if !validText(result.Summary, 12000) || !validStrings(result.Questions, 40) {
 		return invalid()
 	}
 	for _, family := range result.Families {
-		if family.Title == "" || len(family.Title) > 12000 || !oneOf(family.Fit, "direct", "adjacent", "stretch") || !validStrings(family.Skills, 40) || !validStrings(family.Gaps, 40) || !validStrings(family.SearchTerms, 40) {
+		if family.Title == "" || !validText(family.Title, 12000) || !validText(family.Why, 12000) || !oneOf(family.Fit, "direct", "adjacent", "stretch") || !validStrings(family.Skills, 40) || !validStrings(family.Gaps, 40) || !validStrings(family.SearchTerms, 40) {
 			return invalid()
 		}
 	}
 	for _, role := range result.Roles {
-		if role.Company == "" || role.Title == "" || role.Industry == "" || role.Location == "" || len(role.Summary) > 12000 || !oneOf(role.WorkMode, "Remote", "Hybrid", "On-site", "Unknown") || !regexp.MustCompile(`^[A-Z]{3}$`).MatchString(role.Currency) || !oneOf(role.SalaryPeriod, "year", "month", "hour", "unknown") || !oneOf(role.Fit, "direct", "adjacent", "stretch") || !oneOf(role.Status, "open", "uncertain", "closed") {
+		if role.Company == "" || role.Title == "" || role.Industry == "" || role.Location == "" || !validText(role.ID, 12000) || !validText(role.Company, 12000) || !validText(role.Title, 12000) || !validText(role.Industry, 12000) || !validText(role.Location, 12000) || !validText(role.Seniority, 12000) || !validText(role.Summary, 12000) || !validText(role.WorkAuthorization, 12000) || !validSalary(role.SalaryMin) || !validSalary(role.SalaryMax) || !oneOf(role.WorkMode, "Remote", "Hybrid", "On-site", "Unknown") || !regexp.MustCompile(`^[A-Z]{3}$`).MatchString(role.Currency) || !oneOf(role.SalaryPeriod, "year", "month", "hour", "unknown") || !oneOf(role.Fit, "direct", "adjacent", "stretch") || !oneOf(role.Status, "open", "uncertain", "closed") {
 			return invalid()
 		}
 		if !score(role.Scores.Fit) || !score(role.Scores.Growth) || !score(role.Scores.Flexibility) || !score(role.Scores.Compensation) || !validStrings(role.Responsibilities, 40) || !validStrings(role.Gaps, 40) || !validStrings(role.NonBlockers, 40) || !validStrings(role.Questions, 40) || !validStrings(role.Strategy, 40) || !validStrings(role.Interview, 40) || !validStrings(role.Skills, 40) || len(role.Sources) < 1 || len(role.Sources) > 8 || len(role.Evidence) > 30 {
 			return invalid()
 		}
 		for _, source := range role.Sources {
-			if len(source.URL) > 2048 || len(source.Title) > 12000 || len(source.Excerpt) > 1000 {
+			if !validText(source.URL, 2048) || !validText(source.Title, 12000) || !validText(source.Excerpt, 1000) || !validText(source.CheckedAt, 12000) {
 				return invalid()
 			}
 		}
 		for _, evidence := range role.Evidence {
-			if evidence.Requirement == "" || !oneOf(evidence.Importance, "essential", "desirable") || !oneOf(evidence.Assessment, "supported", "gap", "unknown") {
+			if evidence.Requirement == "" || !validText(evidence.Requirement, 12000) || !validText(evidence.CandidateEvidence, 12000) || !validText(evidence.Explanation, 12000) || !oneOf(evidence.Importance, "essential", "desirable") || !oneOf(evidence.Assessment, "supported", "gap", "unknown") {
 				return invalid()
 			}
 		}
@@ -598,4 +614,8 @@ func validStrings(values []string, maximum int) bool {
 	return true
 }
 
+func validText(value string, maximum int) bool { return len(value) <= maximum }
+func validSalary(value *float64) bool {
+	return value == nil || (*value >= 0 && *value <= 100000000)
+}
 func score(value float64) bool { return value >= 0 && value <= 100 }

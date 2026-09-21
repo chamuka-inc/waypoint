@@ -35,6 +35,7 @@ type Service struct {
 	researcher   Researcher
 	sessionKey   string
 	wg           sync.WaitGroup
+	persistHook  func() error
 }
 
 func NewService(directory string) *Service {
@@ -93,6 +94,9 @@ func (s *Service) State() State {
 }
 
 func (s *Service) persistLocked() error {
+	if s.persistHook != nil {
+		return s.persistHook()
+	}
 	data, err := json.MarshalIndent(s.state, "", "  ")
 	if err != nil {
 		return err

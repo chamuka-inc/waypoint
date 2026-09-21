@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -94,6 +95,49 @@ func TestSafeURLAndResearchValidation(t *testing.T) {
 	if err != nil || len(parsed.Roles) != 1 || !strings.HasPrefix(parsed.Roles[0].ID, "role-") {
 		t.Fatalf("unexpected parsed result: %#v %v", parsed, err)
 	}
+	negative := -1.0
+	result = testResult()
+	result.Roles[0].SalaryMin = &negative
+	data, _ = jsonMarshal(result)
+	if _, err := ParseResearch(data, time.Now()); err == nil {
+		t.Fatal("negative salary was accepted")
+	}
+	result = testResult()
+	result.Families[0].Why = strings.Repeat("x", 12001)
+	data, _ = jsonMarshal(result)
+	if _, err := ParseResearch(data, time.Now()); err == nil {
+		t.Fatal("oversized family explanation was accepted")
+	}
+}
+
+func TestResearchSaveFailureIsReported(t *testing.T) {
+	release := make(chan struct{})
+	directory := t.TempDir()
+	service := NewServiceWithResearcher(directory, func(_ context.Context, _ State, _ func(string, *ResearchSourceActivity)) (ResearchResult, error) {
+		<-release
+		return testResult(), nil
+	})
+	if err := service.Init(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SaveProfile(InitialState(true).Profile); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.StartResearch(); err != nil {
+		t.Fatal(err)
+	}
+	service.mu.Lock()
+	service.persistHook = func() error { return errors.New("disk full") }
+	service.mu.Unlock()
+	close(release)
+	state := waitForResearch(t, service)
+	if state.Runs[0].Status != "failed" || !strings.Contains(state.Runs[0].Error, "could not be saved") {
+		t.Fatalf("save failure was not surfaced: %#v", state.Runs[0])
+	}
+	service.mu.Lock()
+	service.persistHook = nil
+	service.mu.Unlock()
+	service.Shutdown()
 }
 
 func TestScheduleDueOncePerLocalSlot(t *testing.T) {

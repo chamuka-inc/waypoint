@@ -35,7 +35,7 @@ const esc = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, c => ({ 
 const icon = (name: string, cls = '') => `<i data-lucide="${name}" class="${cls}" aria-hidden="true"></i>`;
 function selectControl(id: string, label: string, value: string, options: readonly { value: string; label: string }[], proxyAttributes = '', compact = false) {
   const current = options.find(option => option.value === value) || options[0];
-  return `<div class="select-control${compact ? ' compact' : ''}" data-select-control="${esc(id)}"><select class="select-proxy" tabindex="-1" aria-hidden="true" ${proxyAttributes}>${options.map(option => `<option value="${esc(option.value)}" ${option.value === current.value ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}</select><button type="button" class="select-trigger" data-select-trigger="${esc(id)}" aria-label="${esc(label)}" aria-haspopup="listbox" aria-expanded="false" aria-controls="${esc(id)}-menu"><span>${esc(current.label)}</span>${icon('chevron-down')}</button><div class="select-menu" id="${esc(id)}-menu" role="listbox" aria-label="${esc(label)}" hidden>${options.map(option => `<button type="button" role="option" data-select-value="${esc(option.value)}" aria-selected="${option.value === current.value}"><span>${esc(option.label)}</span>${icon('check')}</button>`).join('')}</div></div>`;
+  return `<div class="select-control${compact ? ' compact' : ''}" data-select-control="${esc(id)}"><select class="select-proxy" tabindex="-1" aria-hidden="true" ${proxyAttributes}>${options.map(option => `<option value="${esc(option.value)}" ${option.value === current.value ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}</select><button type="button" class="select-trigger" data-select-trigger="${esc(id)}" aria-label="${esc(label)}" aria-haspopup="listbox" aria-expanded="false" aria-controls="${esc(id)}-menu"><span>${esc(current.label)}</span>${icon('chevron-down')}</button><div class="select-menu" id="${esc(id)}-menu" role="listbox" aria-label="${esc(label)}" hidden>${options.map(option => `<button type="button" role="option" tabindex="${option.value === current.value ? '0' : '-1'}" data-select-value="${esc(option.value)}" aria-selected="${option.value === current.value}"><span>${esc(option.label)}</span>${icon('check')}</button>`).join('')}</div></div>`;
 }
 const badge = (fit: Fit) => `<span class="fit-badge ${fit}"><span></span>${fitLabel[fit]}</span>`;
 const date = (value?: string) => value ? new Date(value).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Not yet researched';
@@ -242,7 +242,10 @@ root.addEventListener('click', async event => {
     const changed = proxy.value !== selectOption.dataset.selectValue;
     proxy.value = selectOption.dataset.selectValue!;
     control.querySelector<HTMLElement>('.select-trigger span')!.textContent = selectOption.querySelector('span')!.textContent;
-    control.querySelectorAll<HTMLElement>('[role="option"]').forEach(option => option.setAttribute('aria-selected', String(option === selectOption)));
+    control.querySelectorAll<HTMLElement>('[role="option"]').forEach(option => {
+      option.setAttribute('aria-selected', String(option === selectOption));
+      option.setAttribute('tabindex', option === selectOption ? '0' : '-1');
+    });
     closeSelectControls();
     if (changed) proxy.dispatchEvent(new Event('change', { bubbles: true }));
     if (document.contains(control)) control.querySelector<HTMLButtonElement>('.select-trigger')?.focus();
