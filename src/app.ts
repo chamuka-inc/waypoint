@@ -298,12 +298,13 @@ window.addEventListener('beforeunload', event => { if (dirty) event.preventDefau
 async function boot() {
   try {
     state = await call('getState'); render();
+    document.body.classList.add('app-ready');
     window.dispatchEvent(new CustomEvent('waypoint-ready'));
     runtime = await call<RuntimeStatus>('status'); if (page === 'settings') render();
     setInterval(async () => {
       if (!activeRun()) return;
       try { const fresh = await call<AppState>('getState'); const completed = !fresh.runs.some(r => r.status === 'running'); state = fresh; if (!selected && !modal && page !== 'profile') render(); if (completed) toast(fresh.runs[0].status === 'completed' ? 'Your research is ready to explore.' : fresh.runs[0].error || 'Research stopped.'); } catch { /* transient fetch failure leaves last-known state visible */ }
     }, 1800);
-  } catch (e) { root.innerHTML = `<div class="startup-error"><h1>Let’s get Waypoint running.</h1><p>${esc((e as Error).message)}</p><p>Start the local app with <code>npm run dev</code> or <code>npm start</code>, then reload.</p></div>`; }
+  } catch (e) { document.body.classList.add('app-ready'); root.innerHTML = `<div class="startup-error"><h1>Let’s get Waypoint running.</h1><p>${esc((e as Error).message)}</p><p>Start the local app with <code>npm run dev</code> or <code>npm start</code>, then reload.</p></div>`; }
 }
 void boot();

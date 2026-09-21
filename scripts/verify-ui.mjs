@@ -32,8 +32,20 @@ const check = (value, description) => { assert.ok(value, description); checks++;
 try {
   const page = await browser.newPage({ viewport: { width: 1460, height: 1050 }, deviceScaleFactor: 1 });
   page.on('pageerror', e => errors.push(e.message));
-  await page.goto(`http://127.0.0.1:${preview.server.address().port}`);
+  let initialStateRequest = true;
+  await page.route('**/api/action', async route => {
+    const request = route.request();
+    if (initialStateRequest && request.postDataJSON()?.method === 'getState') {
+      initialStateRequest = false;
+      await new Promise(resolve => setTimeout(resolve, 350));
+    }
+    await route.continue();
+  });
+  await page.goto(`http://127.0.0.1:${preview.server.address().port}`, { waitUntil: 'domcontentloaded' });
+  check(await page.locator('.startup-splash').isVisible(), 'Branded splash remains visible while initial state loads');
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'waypoint-splash.png') });
   await page.waitForSelector('.role-card');
+  check(await page.locator('.startup-splash').count() === 0 && await page.locator('body').evaluate(body => body.classList.contains('app-ready')), 'Splash hands off after the first application render');
   check(await page.locator('.role-card').count() === 6, 'Demo is labelled and renders six illustrative opportunities');
   await page.screenshot({ animations: 'disabled', path: join(shots, 'waypoint-preview.png'), fullPage: true });
   await page.locator('[data-fit="adjacent"]').click();
@@ -60,6 +72,7 @@ try {
   await page.locator('[name="notes"]').fill('Prepare the 24% activation example.');
   await page.locator('#application-form [name="stage"]').selectOption('Interview');
   await page.locator('#application-form button[type="submit"]').click();
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent?.includes('Application preparation saved'));
   check(service.state.applications[0]?.stage === 'Interview', 'Application preparation and stage are saved');
   await page.keyboard.press('Escape');
   await page.locator('.nav-item[data-nav="applications"]').click();
@@ -72,6 +85,7 @@ try {
   await page.screenshot({ animations: 'disabled', path: join(shots, 'waypoint-paths.png'), fullPage: true });
   await page.locator('.nav-item[data-nav="settings"]').click();
   await page.locator('[data-undo]').click();
+  await page.waitForFunction(() => document.querySelector('#toast')?.textContent?.includes('Feedback removed'));
   check(service.state.feedback.length === 0, 'Preference feedback can be undone');
   await page.locator('[data-action="new"]').first().click();
   await page.locator('[data-action="confirm-new"]').click();

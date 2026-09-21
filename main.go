@@ -26,7 +26,9 @@ func main() {
 		Height:           980,
 		MinWidth:         1024,
 		MinHeight:        700,
-		BackgroundColour: options.NewRGB(247, 248, 245),
+		// Match the startup view so the native window never flashes white while
+		// its webview and frontend bundle are being initialised.
+		BackgroundColour: options.NewRGB(36, 77, 65),
 		AssetServer:      &assetserver.Options{Assets: assets},
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
