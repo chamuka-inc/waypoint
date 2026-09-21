@@ -4,11 +4,11 @@ A personal career research desktop app. Bring your experience, preferences, and 
 
 [Website](https://chamuka-inc.github.io/waypoint/) · [Download the latest release](https://github.com/chamuka-inc/waypoint/releases/latest)
 
-**Implemented stack:** Electron + HTML/CSS/TypeScript, Vite, Node, local Codex CLI, and TypeSafe Jev. Electron was chosen over Tauri to run the existing Node research engine and Codex subprocess without distributing a separate Node sidecar. The rendering layer uses a small explicit service bridge, so a Tauri shell can be substituted later.
+**Implemented stack:** Wails 2 + Go, HTML/CSS/TypeScript, Vite, local Codex CLI, and TypeSafe Jev. Wails uses the operating system's webview, while the native service, persistence, scheduling, document parsing, and provider adapters run in a compiled Go binary. No Node runtime or bundled Chromium is included in the installed application.
 
 ## Run the desktop app
 
-Use Node.js 22.16 or later (Node 24 recommended), npm, and a desktop session on macOS, Windows, or Linux.
+Use Go 1.25, Node.js 22.16 or later (Node 24 recommended), npm, and a desktop session on macOS, Windows, or Linux. The npm scripts run the pinned Wails 2.16 CLI through Go.
 
 ```sh
 npm ci
@@ -57,7 +57,7 @@ After Codex produces a sourced report, Jev evaluates three separate questions pe
 
 The adapter calls `POST https://api.typesafe.ai/v1/systemone` with documented `state`, `model`, and `questions` fields. It validates response probabilities. Choice confidence below 0.65, an uncertain choice, or disagreement with Codex flags the assessment for review. Such assessments never silently change fit or ranking. The threshold is a product default, not a calibrated hiring guarantee. Jev failures leave Codex results intact and appear in research activity.
 
-Jev receives skills, ambitions, seniority, opportunity responsibilities/evidence, selected preferences, and feedback. It does not receive the dedicated name field or raw CV, but free-text evidence can still contain personal information. Keys are kept out of the renderer and saved workspace. Desktop keys use Electron OS encryption when available; without a secure backend they stay in memory. Preview-entered keys are session-only.
+Jev receives skills, ambitions, seniority, opportunity responsibilities/evidence, selected preferences, and feedback. It does not receive the dedicated name field or raw CV, but free-text evidence can still contain personal information. Keys are kept out of the renderer and saved workspace. Desktop keys use the operating system credential store when available; if the credential service is unavailable they remain in memory for the current session. Preview-entered keys are session-only.
 
 ## Candidate workflow
 
@@ -73,7 +73,7 @@ In the desktop app, **Settings → Daily research** can run research once a day 
 
 ## Data and source handling
 
-- Data lives in Electron's `userData` directory (`state.json`). Browser preview uses `.local-data/` or `WAYPOINT_DATA_DIR`.
+- Desktop data lives in the operating system's user configuration directory under `Waypoint/state.json`. Browser preview uses `.local-data/` or `WAYPOINT_DATA_DIR`.
 - The app stores profile/research data as local JSON with atomic replacement and restrictive file modes where supported. **Profile data is not application-encrypted.** Device disk encryption is recommended for sensitive CVs.
 - Research runs are single-flight. Profile/AI-setting changes are blocked during a run to keep results tied to a stable input revision.
 - Results must satisfy a schema. Every imported role needs a public HTTPS source and non-empty evidence excerpt. Closed roles are excluded; duplicate company/title/location combinations are removed; inconsistent salary ranges reject the report.
@@ -88,24 +88,25 @@ In the desktop app, **Settings → Daily research** can run research once a day 
 ## Development and verification
 
 ```sh
-npm run build       # strict TypeScript checks + server compilation + frontend bundle
+npm run build       # strict TypeScript checks + frontend bundle
 npm test            # service, schema, ranking, Jev contract, CLI subprocess, HTTP, CV extraction
+npm run test:go     # Wails service, persistence, scheduling, validation, and document imports
 npx playwright install chromium
 npm run test:ui     # real-browser workflow tests, simulated AI provider
 ```
 
 The UI suite uses an isolated temporary workspace and deletes it afterwards. It exercises navigation, filters, evidence, saved roles, application notes, feedback undo, local CV import, profile steps, research progress, source links, and narrow-screen layout. Screenshots go to `test-artifacts/`. `CHROMIUM_PATH` and `SCREENSHOT_DIR` are optional test-runner overrides.
 
-Validated in the implementation environment: production build, ten automated core tests, nineteen real-browser checks, and visual inspection of discovery/evidence/path/mobile screenshots. The Codex subprocess test uses a controlled executable; the Jev test uses simulated HTTP responses. **No authenticated live Codex or Jev call was made.** The environment does not support Electron's desktop singleton socket, so native-window launch could not be smoke-tested here. Run `npm start` on your target desktop before distributing builds.
+The Codex subprocess test uses a controlled executable; the Jev test uses simulated HTTP responses. **No authenticated live Codex or Jev call is made by the automated suite.** Release automation builds a universal macOS application, a Windows x64 NSIS installer, and a Linux x64 Debian package. It launches the packaged Linux binary under a virtual display and verifies that the webview completes its call into the Go service.
 
 ## Packaging
 
 ```sh
-npm run package    # unpacked desktop package for this platform
-npm run dist       # platform installer (DMG / NSIS / AppImage)
+npm run package    # native Wails application for this platform
+npm run dist       # equivalent local production build
 ```
 
-Packaging configuration is included, but signed installers are not included in this source delivery. Build on the target OS, configure signing/notarisation for distribution, and verify the installed app with your actual CLI login and TypeSafe account. The default Electron icon is used; no automatic updater is configured.
+The GitHub Actions release workflow creates DMG, NSIS, and Debian artifacts on their native runners. Tagged builds attach them to the corresponding GitHub Release. The packages are currently unsigned; configure code signing and macOS notarisation before broad public distribution. No automatic updater is configured.
 
 ## Project layout
 
@@ -114,11 +115,9 @@ Packaging configuration is included, but signed installers are not included in t
 | `src/app.ts`, `src/style.css` | Candidate workspace and responsive visual design |
 | `src/types.ts`, `src/ranking.ts` | Shared types, preference weighting, constraint checks |
 | `src/demo.ts` | Clearly fictional first-launch sample |
-| `server/service.ts` | Persistence, CV parsing, application state, run lifecycle |
-| `server/codex.ts`, `server/schema.ts` | Codex subprocess, prompt, structured output validation |
-| `server/jev.ts` | TypeSafe typed questions and confidence gate |
-| `server/preview.ts` | Loopback-only development service and Vite preview |
-| `electron/main.ts`, `electron/preload.cts` | Native shell, isolated IPC, OS key encryption |
+| `internal/waypoint/` | Go persistence, CV parsing, application state, Codex/Jev adapters, and run lifecycle |
+| `app.go`, `main.go` | Wails bridge, native window, scheduling, notifications, and external-link handling |
+| `server/` | Loopback-only browser preview and TypeScript reference service |
 | `tests/`, `scripts/verify-ui.mjs` | Core tests, fixtures, and browser workflow checks |
 
 ## Current boundaries
@@ -132,4 +131,4 @@ The next production gates are authenticated end-to-end research evaluation, prov
 - [Codex non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode): CLI invocation, JSON events, output schemas, ephemeral sessions, existing authentication.
 - [TypeSafe introduction](https://docs.typesafe.ai/introduction): Jev's typed decision model and atomic questions.
 - [TypeSafe quick start](https://docs.typesafe.ai/introduction/quickstart): endpoint, authentication, request/response shape, `jev-latest`.
-- [Electron security](https://www.electronjs.org/docs/latest/tutorial/security): renderer isolation, sandboxing, IPC sender checks, navigation restrictions, and CSP.
+- [Wails documentation](https://wails.io/docs/introduction): native bindings, system webviews, platform builds, and runtime APIs.

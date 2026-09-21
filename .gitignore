@@ -1,9 +1,13 @@
 node_modules/
-dist/
+dist/*
+!dist/.gitkeep
 dist-server/
 release/
+build/bin/
+wailsjs/
 .local-data/
 .env
 *.log
+package.json.md5
 
 test-artifacts/
