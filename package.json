@@ -1,6 +1,6 @@
 {
   "name": "waypoint-career",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "A personal career research desktop application powered by Codex and TypeSafe Jev",
