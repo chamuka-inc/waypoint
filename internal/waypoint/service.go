@@ -134,6 +134,43 @@ func (s *Service) State() State {
 	return cloneState(s.state)
 }
 
+func (s *Service) ActiveResearch() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.activeCancel != nil
+}
+
+func (s *Service) WorkspaceID() (string, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.repository.WorkspaceID()
+}
+
+func (s *Service) SetWorkspaceID(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.repository.SetWorkspaceID(id)
+}
+
+func (s *Service) ImportState(state State) (State, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.activeCancel != nil {
+		return State{}, errors.New("cancel active research before importing a workspace")
+	}
+	if err := prepareLoadedState(&state); err != nil {
+		return State{}, errors.New("the workspace backup is invalid or incompatible")
+	}
+	previous := s.state
+	s.state = cloneState(state)
+	s.capOpportunitiesLocked()
+	if err := s.persistLocked(); err != nil {
+		s.state = previous
+		return State{}, err
+	}
+	return cloneState(s.state), nil
+}
+
 func (s *Service) persistLocked() error {
 	if s.persistHook != nil {
 		return s.persistHook()

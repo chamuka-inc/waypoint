@@ -37,6 +37,13 @@ export interface AppState {
   settings: { jevEnabled: boolean; jevModel: string; researchSchedule: ResearchSchedule };
 }
 export interface RuntimeStatus { desktop: boolean; codex: boolean; codexVersion: string; jevConfigured: boolean; storage: string }
+export interface WorkspaceSummary {
+  id: string; name: string; current: boolean; demo: boolean; opportunityCount: number; savedCount: number;
+  profileComplete: boolean; researchRunning: boolean; createdAt: string; updatedAt: string; lastOpenedAt: string;
+  archivedAt?: string; deletedAt?: string; unavailable: boolean;
+}
+export interface WorkspaceBootstrap { workspace: WorkspaceSummary; workspaces: WorkspaceSummary[]; state: AppState; epoch: number }
+export interface CreateWorkspaceInput { name: string; mode: 'blank' | 'copy' | 'import'; state?: AppState }
 export interface API {
   getState(): Promise<AppState>;
   saveProfile(profile: Profile): Promise<AppState>;

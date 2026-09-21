@@ -17,7 +17,7 @@ import (
 
 type App struct {
 	ctx     context.Context
-	service *waypoint.Service
+	manager *waypoint.WorkspaceManager
 	stop    chan struct{}
 	once    sync.Once
 }
@@ -33,11 +33,11 @@ func NewApp() (*App, error) {
 	} else if !filepath.IsAbs(directory) {
 		return nil, errors.New("WAYPOINT_DATA_DIR must be an absolute path")
 	}
-	service := waypoint.NewService(directory)
-	if err := service.Init(); err != nil {
+	manager := waypoint.NewWorkspaceManager(directory)
+	if err := manager.Init(); err != nil {
 		return nil, err
 	}
-	return &App{service: service, stop: make(chan struct{})}, nil
+	return &App{manager: manager, stop: make(chan struct{})}, nil
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -47,11 +47,11 @@ func (a *App) startup(ctx context.Context) {
 
 func (a *App) shutdown(context.Context) {
 	a.once.Do(func() { close(a.stop) })
-	a.service.Shutdown()
+	a.manager.Close()
 }
 
 func (a *App) Call(method string, args []any) (any, error) {
-	return a.service.Dispatch(method, args)
+	return a.manager.Dispatch(method, args)
 }
 
 func (a *App) OpenExternal(address string) error {
@@ -89,39 +89,40 @@ func (a *App) scheduleLoop() {
 }
 
 func (a *App) checkSchedule() {
-	before := map[string]bool{}
-	for _, role := range a.service.State().Roles {
-		before[role.ID] = true
-	}
-	started, err := a.service.StartScheduledResearch(time.Now())
-	if err != nil || !started {
-		return
-	}
 	for {
-		select {
-		case <-time.After(2 * time.Second):
-			state := a.service.State()
-			if len(state.Runs) == 0 || state.Runs[0].Status == "running" {
-				continue
-			}
-			if state.Runs[0].Status == "completed" {
-				count := 0
-				for _, role := range state.Roles {
-					if !before[role.ID] {
-						count++
-					}
-				}
-				if count > 0 {
-					message := fmt.Sprintf("%d new opportunities match your profile.", count)
-					if count == 1 {
-						message = "1 new opportunity matches your profile."
-					}
-					_ = beeep.Notify("New Waypoint matches", message, "")
-				}
-			}
-			return
-		case <-a.stop:
+		run, started, err := a.manager.StartNextScheduledResearch(time.Now())
+		if err != nil || !started {
 			return
 		}
+		finished := false
+		for !finished {
+			select {
+			case <-time.After(2 * time.Second):
+				state := run.Service.State()
+				if len(state.Runs) == 0 || state.Runs[0].Status == "running" {
+					continue
+				}
+				if state.Runs[0].Status == "completed" {
+					count := 0
+					for _, role := range state.Roles {
+						if !run.Before[role.ID] {
+							count++
+						}
+					}
+					if count > 0 {
+						message := fmt.Sprintf("%d new opportunities in %s.", count, run.WorkspaceName)
+						if count == 1 {
+							message = fmt.Sprintf("1 new opportunity in %s.", run.WorkspaceName)
+						}
+						_ = beeep.Notify("New Waypoint matches", message, "")
+					}
+				}
+				finished = true
+			case <-a.stop:
+				a.manager.FinishScheduledResearch(run.Service)
+				return
+			}
+		}
+		a.manager.FinishScheduledResearch(run.Service)
 	}
 }

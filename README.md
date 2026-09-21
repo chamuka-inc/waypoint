@@ -68,12 +68,13 @@ Jev receives skills, ambitions, seniority, opportunity responsibilities/evidence
 5. **Discover / Career paths:** Explore direct, adjacent, and stretch options. Filter and search; inspect evidence, responsibilities, salary, location, gaps, and source excerpts. Select and remove one or more opportunities when they are no longer useful. Vacancy status is reported by the research agent and should be checked before applying.
 6. **Shortlist / Applications:** Save roles, prepare truthful CV/interview examples, add notes, export a Markdown brief, and move applications through Preparing, Applied, Interview, and Offer.
 7. **Feedback:** “More like this”, “Too technical”, “Too junior”, salary/industry objections, and “Not for me” influence ordering and subsequent research. Undo feedback in Settings.
+8. **Workspaces:** Use the identity card at the bottom of the sidebar to switch or create an isolated workspace. Create blank, copy profile/preferences only, or import a JSON export. Manage rename, archive, restore, recently deleted, and permanent deletion from Settings.
 
-In the desktop app, **Settings → Daily research** can run research once a day at a chosen local time. Waypoint must remain open or minimized. It sends an operating-system notification only when a new stable opportunity ID appears; it never applies or contacts anyone.
+In the desktop app, **Settings → Daily research** can run research once a day at a chosen local time. Waypoint must remain open or minimized. Due research is serialised across all active workspaces; archived and recently deleted workspaces are skipped. Notifications name the workspace and appear only when a new stable opportunity ID appears. Waypoint never applies or contacts anyone.
 
 ## Data and source handling
 
-- Desktop data lives in the operating system's user configuration directory under `Waypoint/waypoint.db`. Browser preview remains an isolated development service using `.local-data/state.json`. Developers can set an absolute `WAYPOINT_DATA_DIR` to isolate either runtime.
+- Desktop data lives in the operating system's user configuration directory. `Waypoint/catalog.db` tracks local workspace metadata, the original workspace remains at `Waypoint/waypoint.db`, and additional workspaces use `Waypoint/workspaces/<id>/waypoint.db`. Browser preview mirrors the architecture with `catalog.json` and isolated `state.json` files. Developers can set an absolute `WAYPOINT_DATA_DIR` to isolate either runtime.
 - The desktop app stores profile and research data in a local SQLite database with transactional writes, foreign-key integrity, schema versioning, and restrictive file modes where supported. Nested evidence payloads remain JSON inside relational rows. **Profile data is not application-encrypted.** Device disk encryption is recommended for sensitive CVs.
 - On the first SQLite launch, a compatible legacy `Waypoint/state.json` is imported automatically and left unchanged as a recovery backup. Once `waypoint.db` contains a workspace, it is the source of truth.
 - Research runs are single-flight. Profile/AI-setting changes are blocked during a run to keep results tied to a stable input revision.
@@ -83,7 +84,7 @@ In the desktop app, **Settings → Daily research** can run research once a day 
 - Unknown salary, work arrangement, exclusions, and uncertain Jev fit remain visible as separate checks. Remote is not assumed to mean worldwide.
 - Saved/application roles absent from a new run are retained and marked uncertain. Stable IDs preserve notes when the same role returns.
 - The opportunity workspace holds at most 50 roles. Newer research replaces the oldest roles and removes their associated shortlist, application, and feedback records.
-- Export your workspace or shortlist from Settings/Shortlist. Workspace exports remain portable JSON and contain personal data but no stored API key. There is no in-app restore UI yet; see [`docs/persistence.md`](docs/persistence.md) for the recovery procedure.
+- Export your workspace or shortlist from Settings/Shortlist. Workspace exports remain portable JSON and contain personal data but no stored API key. Import an export when creating a workspace; see [`docs/persistence.md`](docs/persistence.md) for storage and lower-level recovery details.
 - “Start fresh” requires a confirmation in the app and clears candidate data; connection settings are retained.
 
 ## Development and verification
@@ -96,7 +97,7 @@ npx playwright install chromium
 npm run test:ui     # real-browser workflow tests, simulated AI provider
 ```
 
-The UI suite uses an isolated temporary workspace and deletes it afterwards. It exercises navigation, filters, evidence, saved roles, application notes, feedback undo, local CV import, profile steps, research progress, source links, and narrow-screen layout. Screenshots go to `test-artifacts/`. `CHROMIUM_PATH` and `SCREENSHOT_DIR` are optional test-runner overrides.
+The UI suite uses an isolated temporary data directory and deletes it afterwards. It exercises navigation, filters, evidence, saved roles, application notes, feedback undo, local CV import, profile steps, research progress, source links, workspace creation/switching/lifecycle management, and narrow-screen layout. Screenshots go to `test-artifacts/`. `CHROMIUM_PATH` and `SCREENSHOT_DIR` are optional test-runner overrides.
 
 The Codex subprocess test uses a controlled executable; the Jev test uses simulated HTTP responses. **No authenticated live Codex or Jev call is made by the automated suite.** Release automation builds a universal macOS application, a Windows x64 NSIS installer, and a Linux x64 Debian package. It launches the packaged Linux binary under a virtual display and verifies that the webview completes its call into the Go service.
 

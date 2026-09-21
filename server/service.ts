@@ -50,6 +50,17 @@ export class CareerService {
     return operation;
   }
   getState() { return structuredClone(this.state); }
+  createSibling(directory: string) { return new CareerService(directory, this.desktop, this.researcher, this.keyStore); }
+  isResearchActive() { return Boolean(this.active); }
+  async importState(value: AppState) {
+    if (this.active) throw new Error('Cancel active research before importing a workspace.');
+    if (value?.version !== 1 || !Array.isArray(value.roles) || !Array.isArray(value.runs) || !Array.isArray(value.families) || !Array.isArray(value.saved) || !Array.isArray(value.applications) || !Array.isArray(value.feedback) || !Array.isArray(value.questions)) throw new Error('The workspace backup is invalid or incompatible.');
+    parseProfile(value.profile);
+    this.state = structuredClone(value);
+    for (const run of this.state.runs) if (run.status === 'running') { run.status = 'failed'; run.error = 'The application closed before research finished.'; run.finishedAt = new Date().toISOString(); }
+    this.capOpportunities();
+    await this.persist(); return this.getState();
+  }
   async saveProfile(value: Profile) {
     if (this.active) throw new Error('Finish or cancel the current research before changing your profile.');
     const profile = parseProfile(value);

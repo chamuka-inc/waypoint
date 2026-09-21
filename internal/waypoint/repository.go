@@ -21,6 +21,8 @@ type WorkspaceRepository interface {
 	Init() error
 	Load() (State, bool, error)
 	Save(State) error
+	WorkspaceID() (string, bool, error)
+	SetWorkspaceID(string) error
 	Close() error
 }
 
@@ -83,12 +85,36 @@ func (r *SQLiteRepository) migrate() error {
 	if err := r.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return err
 	}
-	if version > 1 {
+	if version > 2 {
 		return fmt.Errorf("database schema %d is newer than this application supports", version)
 	}
-	if version == 1 {
+	if version == 2 {
 		return nil
 	}
+	if version == 0 {
+		if err := r.migrateInitialSchema(); err != nil {
+			return err
+		}
+	}
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.Exec(`CREATE TABLE workspace_identity (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		workspace_id TEXT NOT NULL UNIQUE
+	) STRICT`)
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`PRAGMA user_version = 2`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *SQLiteRepository) migrateInitialSchema() error {
 	tx, err := r.db.Begin()
 	if err != nil {
 		return err
@@ -175,6 +201,29 @@ func (r *SQLiteRepository) migrate() error {
 		}
 	}
 	return tx.Commit()
+}
+
+func (r *SQLiteRepository) WorkspaceID() (string, bool, error) {
+	if r.db == nil {
+		return "", false, errors.New("database is not open")
+	}
+	var id string
+	err := r.db.QueryRow(`SELECT workspace_id FROM workspace_identity WHERE id = 1`).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	return id, err == nil, err
+}
+
+func (r *SQLiteRepository) SetWorkspaceID(id string) error {
+	if r.db == nil {
+		return errors.New("database is not open")
+	}
+	if id == "" {
+		return errors.New("workspace ID is required")
+	}
+	_, err := r.db.Exec(`INSERT INTO workspace_identity (id, workspace_id) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET workspace_id = excluded.workspace_id`, id)
+	return err
 }
 
 func (r *SQLiteRepository) Load() (State, bool, error) {

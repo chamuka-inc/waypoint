@@ -35,7 +35,7 @@ try {
   let initialStateRequest = true;
   await page.route('**/api/action', async route => {
     const request = route.request();
-    if (initialStateRequest && request.postDataJSON()?.method === 'getState') {
+    if (initialStateRequest && request.postDataJSON()?.method === 'bootstrap') {
       initialStateRequest = false;
       await new Promise(resolve => setTimeout(resolve, 350));
     }
@@ -138,6 +138,35 @@ try {
   await page.locator('[data-action="remove-selected"]').click();
   await page.waitForFunction(() => document.querySelectorAll('.role-card').length === 0);
   check(service.state.roles.length === 0, 'Selected opportunities can be removed with related workspace data');
+  await page.locator('[data-action="workspace-switcher"]').click();
+  check(await page.locator('.workspace-popover').isVisible(), 'Workspace switcher opens from the persistent sidebar identity card');
+  await page.locator('[data-action="create-workspace"]').click();
+  await page.locator('#workspace-create-form [name="name"]').fill('Adjacent search');
+  await page.locator('#workspace-create-form button[type="submit"]').click();
+  await page.waitForFunction(() => document.querySelector('.breadcrumb')?.textContent?.includes('Adjacent search'));
+  check(await page.locator('.role-card').count() === 0 && (await page.locator('.breadcrumb').innerText()).includes('Adjacent search'), 'A blank workspace is created, switched, and isolated from the original');
+  await page.locator('[data-action="workspace-switcher"]').click();
+  await page.locator('.workspace-choice').filter({ hasText: 'Sample workspace' }).click();
+  await page.waitForFunction(() => document.querySelector('.breadcrumb')?.textContent?.includes('Sample workspace'));
+  check((await page.locator('.breadcrumb').innerText()).includes('Sample workspace'), 'Switcher returns to the original workspace');
+  await page.locator('.nav-item[data-nav="settings"]').click();
+  const adjacentRow = page.locator('.workspace-manage-row').filter({ hasText: 'Adjacent search' });
+  await adjacentRow.locator('[data-workspace-action="rename"]').click();
+  await page.locator('#workspace-rename-form [name="name"]').fill('Archived direction');
+  await page.locator('#workspace-rename-form button[type="submit"]').click();
+  const archivedRow = page.locator('.workspace-manage-row').filter({ hasText: 'Archived direction' });
+  await archivedRow.locator('[data-workspace-action="archive"]').click();
+  check(await page.locator('.workspace-group').filter({ hasText: 'ARCHIVED' }).filter({ hasText: 'Archived direction' }).count() === 1, 'Non-current workspace can be renamed and archived');
+  await page.locator('.workspace-manage-row').filter({ hasText: 'Archived direction' }).locator('[data-workspace-action="restore"]').click();
+  page.once('dialog', dialog => dialog.accept());
+  await page.locator('.workspace-manage-row').filter({ hasText: 'Archived direction' }).locator('[data-workspace-action="delete"]').click();
+  const deletedRow = page.locator('.workspace-manage-row').filter({ hasText: 'Archived direction' });
+  await deletedRow.locator('[data-workspace-action="permanent"]').click();
+  await page.locator('#workspace-delete-form [name="confirmation"]').fill('Archived direction');
+  await page.locator('#workspace-delete-form button[type="submit"]').click();
+  await page.locator('.workspace-manage-row').filter({ hasText: 'Archived direction' }).waitFor({ state: 'detached' });
+  check(await page.locator('.workspace-manage-row').filter({ hasText: 'Archived direction' }).count() === 0, 'Recently deleted workspace can be permanently removed with typed confirmation');
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'waypoint-workspaces.png'), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Narrow layout has no horizontal overflow');
   await page.screenshot({ animations: 'disabled', path: join(shots, 'waypoint-mobile.png'), fullPage: true });
