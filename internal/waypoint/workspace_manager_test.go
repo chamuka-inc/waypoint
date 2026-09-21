@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -232,6 +233,16 @@ func TestRepositoryMigratesWorkspaceIdentity(t *testing.T) {
 	var version int
 	if err := repository.db.QueryRowContext(context.Background(), `PRAGMA user_version`).Scan(&version); err != nil || version != 2 {
 		t.Fatalf("unexpected schema version: %d %v", version, err)
+	}
+}
+
+func TestSQLiteDSNUsesAWindowsFileURL(t *testing.T) {
+	dsn := sqliteDSN(`C:\Users\candidate\AppData\Roaming\Waypoint\waypoint.db`)
+	if !strings.HasPrefix(dsn, "file:///C:/Users/candidate/AppData/Roaming/Waypoint/waypoint.db?") {
+		t.Fatalf("Windows database path produced an invalid SQLite URI: %s", dsn)
+	}
+	if !strings.Contains(dsn, "_pragma=") {
+		t.Fatalf("SQLite URI lost its connection pragmas: %s", dsn)
 	}
 }
 
