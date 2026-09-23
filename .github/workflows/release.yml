@@ -69,13 +69,14 @@ jobs:
         shell: bash
         run: |
           wails build -clean -platform linux/amd64 -tags webkit2_41
+          version="$(node -p "require('./package.json').version")"
           package="$RUNNER_TEMP/waypoint-deb"
           mkdir -p "$package/DEBIAN" "$package/usr/bin" "$package/usr/share/applications" "$package/usr/share/icons/hicolor/256x256/apps" artifacts
           install -m 0755 build/bin/Waypoint "$package/usr/bin/waypoint"
           install -m 0644 build/appicon.png "$package/usr/share/icons/hicolor/256x256/apps/waypoint.png"
-          cat > "$package/DEBIAN/control" <<'EOF'
+          cat > "$package/DEBIAN/control" <<EOF
           Package: waypoint
-          Version: 0.2.1
+          Version: $version
           Section: office
           Priority: optional
           Architecture: amd64

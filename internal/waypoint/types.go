@@ -121,6 +121,39 @@ type Application struct {
 	UpdatedAt string `json:"updatedAt"`
 }
 
+type DraftEvidence struct {
+	Claim       string `json:"claim"`
+	Source      string `json:"source"`
+	Requirement string `json:"requirement"`
+}
+
+type DraftContent struct {
+	Application string          `json:"application"`
+	Resume      string          `json:"resume"`
+	Evidence    []DraftEvidence `json:"evidence"`
+	Questions   []string        `json:"questions"`
+}
+
+type ApplicationDraft struct {
+	RoleID              string        `json:"roleId"`
+	Company             string        `json:"company"`
+	Title               string        `json:"title"`
+	SourceURL           string        `json:"sourceUrl"`
+	SourceCheckedAt     string        `json:"sourceCheckedAt"`
+	ProfileRevision     int           `json:"profileRevision"`
+	RoleFingerprint     string        `json:"roleFingerprint"`
+	Revision            int           `json:"revision"`
+	Status              string        `json:"status"`
+	Error               string        `json:"error"`
+	Generated           DraftContent  `json:"generated"`
+	Edited              DraftContent  `json:"edited"`
+	Pending             *DraftContent `json:"pending,omitempty"`
+	ApplicationReviewed bool          `json:"applicationReviewed"`
+	ResumeReviewed      bool          `json:"resumeReviewed"`
+	CreatedAt           string        `json:"createdAt"`
+	UpdatedAt           string        `json:"updatedAt"`
+}
+
 type ResearchSourceActivity struct {
 	URL    string `json:"url"`
 	Title  string `json:"title"`
@@ -152,20 +185,21 @@ type Settings struct {
 }
 
 type State struct {
-	Version          int           `json:"version"`
-	Demo             bool          `json:"demo"`
-	Profile          Profile       `json:"profile"`
-	Roles            []Opportunity `json:"roles"`
-	Families         []RoleFamily  `json:"families"`
-	Saved            []string      `json:"saved"`
-	Applications     []Application `json:"applications"`
-	Feedback         []Feedback    `json:"feedback"`
-	Runs             []ResearchRun `json:"runs"`
-	Summary          string        `json:"summary"`
-	Questions        []string      `json:"questions"`
-	ProfileRevision  int           `json:"profileRevision"`
-	ResearchRevision int           `json:"researchRevision"`
-	Settings         Settings      `json:"settings"`
+	Version          int                `json:"version"`
+	Demo             bool               `json:"demo"`
+	Profile          Profile            `json:"profile"`
+	Roles            []Opportunity      `json:"roles"`
+	Families         []RoleFamily       `json:"families"`
+	Saved            []string           `json:"saved"`
+	Applications     []Application      `json:"applications"`
+	Drafts           []ApplicationDraft `json:"drafts"`
+	Feedback         []Feedback         `json:"feedback"`
+	Runs             []ResearchRun      `json:"runs"`
+	Summary          string             `json:"summary"`
+	Questions        []string           `json:"questions"`
+	ProfileRevision  int                `json:"profileRevision"`
+	ResearchRevision int                `json:"researchRevision"`
+	Settings         Settings           `json:"settings"`
 }
 
 type ResearchResult struct {
@@ -235,7 +269,7 @@ func InitialState(demo bool) State {
 			},
 		},
 		Roles: []Opportunity{}, Families: []RoleFamily{}, Saved: []string{},
-		Applications: []Application{}, Feedback: []Feedback{}, Runs: []ResearchRun{}, Questions: []string{},
+		Applications: []Application{}, Drafts: []ApplicationDraft{}, Feedback: []Feedback{}, Runs: []ResearchRun{}, Questions: []string{},
 		Settings: Settings{JevModel: "jev-latest", ResearchSchedule: ResearchSchedule{Time: "09:00"}},
 	}
 }

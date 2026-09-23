@@ -278,7 +278,7 @@ func webSearchUpdates(record map[string]any, now time.Time) []progressUpdate {
 
 func (s *Service) StartResearch() (State, error) {
 	s.mu.Lock()
-	if s.activeCancel != nil {
+	if s.activeCancel != nil || s.activeDraftCancel != nil {
 		s.mu.Unlock()
 		return State{}, errors.New("research is already running")
 	}
@@ -408,8 +408,19 @@ func (s *Service) executeResearch(ctx context.Context, snapshot State, runID str
 		s.state.ResearchRevision = snapshot.ProfileRevision
 		run = s.runLocked(runID)
 		run.Status = "completed"
-		run.Count = len(result.Roles)
-		message := fmt.Sprintf("%d sourced opportunities added.", len(result.Roles))
+		kept := map[string]bool{}
+		for _, role := range s.state.Roles {
+			kept[role.ID] = true
+		}
+		for _, role := range result.Roles {
+			if kept[role.ID] {
+				run.Count++
+			}
+		}
+		message := fmt.Sprintf("%d sourced opportunities added.", run.Count)
+		if run.Count < len(result.Roles) {
+			message += " The 50-opportunity limit kept saved drafts; some new roles were omitted."
+		}
 		if len(retained) > 0 {
 			message += " Older saved roles remain marked for rechecking."
 		}

@@ -57,7 +57,7 @@ export function initialState(demo = true): AppState {
       { title: 'Climate Product Lead', fit: 'adjacent', why: 'Transfers your product craft into an industry aligned with your ambitions.', skills: ['User research', 'Product strategy'], gaps: ['Climate-domain expertise'], searchTerms: ['Climate Product Manager', 'Sustainability Product Lead'] },
       { title: 'Principal Product Manager', fit: 'stretch', why: 'A credible longer-term direction if you can show influence beyond a single product team.', skills: ['Product strategy'], gaps: ['Portfolio-level leadership'], searchTerms: ['Principal Product Manager', 'Group Product Manager'] },
     ] : [],
-    saved: [], applications: [], feedback: [], runs: [],
+    saved: [], applications: [], drafts: [], feedback: [], runs: [],
     summary: demo ? 'Your product craft travels further than your job title. Product operations and climate technology look like promising directions to explore.' : '',
     questions: demo ? ['Would you trade some salary for a role in climate technology?', 'Would you like to manage people, or stay close to the product?'] : [],
     profileRevision: 0, researchRevision: 0, settings: { jevEnabled: false, jevModel: 'jev-latest', researchSchedule: { enabled: false, time: '09:00', lastRunAt: '' } },

@@ -231,7 +231,7 @@ func TestRepositoryMigratesWorkspaceIdentity(t *testing.T) {
 		t.Fatalf("workspace identity did not round trip: %q %v %v", id, found, err)
 	}
 	var version int
-	if err := repository.db.QueryRowContext(context.Background(), `PRAGMA user_version`).Scan(&version); err != nil || version != 2 {
+	if err := repository.db.QueryRowContext(context.Background(), `PRAGMA user_version`).Scan(&version); err != nil || version != 3 {
 		t.Fatalf("unexpected schema version: %d %v", version, err)
 	}
 }

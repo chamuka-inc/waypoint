@@ -41,16 +41,20 @@ export const researchSchema = obj({
 const researchSource = obj({ url: { type: 'string', maxLength: 2048 }, title: str, status: en('found', 'reviewing', 'reviewed'), seenAt: str });
 const runProperties = { id: str, startedAt: str, status: en('running', 'completed', 'failed', 'cancelled'), events: { type: 'array', items: str, maxItems: 60 }, count: { type: 'integer', minimum: 0 } };
 const run = { type: 'object', additionalProperties: false, required: Object.keys(runProperties), properties: { ...runProperties, finishedAt: str, sources: { type: 'array', items: researchSource, maxItems: 60 }, error: str } };
+const draftContent = obj({ application: { type: 'string', maxLength: 30000 }, resume: { type: 'string', maxLength: 50000 }, evidence: { type: 'array', maxItems: 60, items: obj({ claim: { type: 'string', maxLength: 1000 }, source: { type: 'string', maxLength: 1000 }, requirement: { type: 'string', maxLength: 1000 } }) }, questions: { type: 'array', maxItems: 30, items: str } });
+const applicationDraft = { type: 'object', additionalProperties: false, required: ['roleId', 'company', 'title', 'sourceUrl', 'profileRevision', 'roleFingerprint', 'revision', 'status', 'error', 'generated', 'edited', 'applicationReviewed', 'resumeReviewed', 'createdAt', 'updatedAt'], properties: { roleId: str, company: str, title: str, sourceUrl: str, sourceCheckedAt: str, profileRevision: { type: 'integer', minimum: 0 }, roleFingerprint: str, revision: { type: 'integer', minimum: 1 }, status: en('running', 'ready', 'failed', 'cancelled'), error: str, generated: draftContent, edited: draftContent, pending: draftContent, applicationReviewed: { type: 'boolean' }, resumeReviewed: { type: 'boolean' }, createdAt: str, updatedAt: str } };
 const workspaceStateSchema = obj({
   version: { type: 'integer', const: 1 }, demo: { type: 'boolean' }, profile: profileSchema,
   roles: { type: 'array', items: role, maxItems: 50 }, families: { type: 'array', items: family, maxItems: 12 },
   saved: { type: 'array', items: str, maxItems: 50, uniqueItems: true },
   applications: { type: 'array', items: obj({ roleId: str, stage: en('Saved', 'Preparing', 'Applied', 'Interview', 'Offer'), notes: { type: 'string', maxLength: 20000 }, updatedAt: str }), maxItems: 50 },
+  drafts: { type: 'array', items: applicationDraft, maxItems: 50 },
   feedback: { type: 'array', items: obj({ id: str, roleId: str, kind: en('more', 'too-technical', 'too-junior', 'salary-low', 'no-industry', 'not-interested'), company: str, title: str, industry: str, skills: strings, createdAt: str }) },
   runs: { type: 'array', items: run, maxItems: 30 }, summary: str, questions: strings,
   profileRevision: { type: 'integer', minimum: 0 }, researchRevision: { type: 'integer', minimum: 0 },
   settings: obj({ jevEnabled: { type: 'boolean' }, jevModel: { type: 'string', pattern: '^jev-[a-zA-Z0-9._-]{1,80}$' }, researchSchedule: obj({ enabled: { type: 'boolean' }, time: { type: 'string', pattern: '^([01]\\d|2[0-3]):[0-5]\\d$' }, lastRunAt: str }) }),
 });
+workspaceStateSchema.required = workspaceStateSchema.required.filter(key => key !== 'drafts');
 // Ajv's default CJS export is the constructor in Node's ESM interop.
 const ajv = new (Ajv as unknown as { new(options?: unknown): import('ajv').default })({ allErrors: true });
 const validateResult = ajv.compile(researchSchema);
@@ -79,6 +83,7 @@ export function safeURL(input: string): string | null {
 export function parseWorkspaceState(input: unknown): AppState {
   if (!validateWorkspaceState(input)) throw new Error('The workspace backup is invalid or incompatible.');
   const state = structuredClone(input) as unknown as AppState;
+  state.drafts ||= [];
   if (Object.values(state.profile.priorities).every(value => value === 0)) throw new Error('The workspace backup is invalid or incompatible.');
   const roleIds = new Set<string>();
   for (const role of state.roles) {
@@ -91,6 +96,11 @@ export function parseWorkspaceState(input: unknown): AppState {
   for (const item of state.applications) {
     if (!roleIds.has(item.roleId) || applicationIds.has(item.roleId)) throw new Error('The workspace backup is invalid or incompatible.');
     applicationIds.add(item.roleId);
+  }
+  const draftIds = new Set<string>();
+  for (const item of state.drafts) {
+    if (!roleIds.has(item.roleId) || draftIds.has(item.roleId) || (item.sourceUrl && !safeURL(item.sourceUrl))) throw new Error('The workspace backup is invalid or incompatible.');
+    draftIds.add(item.roleId);
   }
   const feedbackIds = new Set<string>();
   for (const item of state.feedback) {

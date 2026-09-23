@@ -26,13 +26,21 @@ export interface Opportunity {
 export interface RoleFamily { title: string; fit: Fit; why: string; skills: string[]; gaps: string[]; searchTerms: string[] }
 export interface Feedback { id: string; roleId: string; kind: FeedbackKind; company: string; title: string; industry: string; skills: string[]; createdAt: string }
 export interface Application { roleId: string; stage: 'Saved' | 'Preparing' | 'Applied' | 'Interview' | 'Offer'; notes: string; updatedAt: string }
+export interface DraftEvidence { claim: string; source: string; requirement: string }
+export interface DraftContent { application: string; resume: string; evidence: DraftEvidence[]; questions: string[] }
+export interface ApplicationDraft {
+  roleId: string; company: string; title: string; sourceUrl: string; sourceCheckedAt?: string; profileRevision: number; roleFingerprint: string;
+  revision: number; status: 'running' | 'ready' | 'failed' | 'cancelled'; error: string;
+  generated: DraftContent; edited: DraftContent; pending?: DraftContent;
+  applicationReviewed: boolean; resumeReviewed: boolean; createdAt: string; updatedAt: string;
+}
 export interface ResearchResult { summary: string; roles: Opportunity[]; families: RoleFamily[]; questions: string[] }
 export interface ResearchSourceActivity { url: string; title: string; status: 'found' | 'reviewing' | 'reviewed'; seenAt: string }
 export interface ResearchRun { id: string; startedAt: string; finishedAt?: string; status: 'running' | 'completed' | 'failed' | 'cancelled'; events: string[]; sources?: ResearchSourceActivity[]; count: number; error?: string }
 export interface ResearchSchedule { enabled: boolean; time: string; lastRunAt: string }
 export interface AppState {
   version: 1; demo: boolean; profile: Profile; roles: Opportunity[]; families: RoleFamily[];
-  saved: string[]; applications: Application[]; feedback: Feedback[]; runs: ResearchRun[];
+  saved: string[]; applications: Application[]; drafts: ApplicationDraft[]; feedback: Feedback[]; runs: ResearchRun[];
   summary: string; questions: string[]; profileRevision: number; researchRevision: number;
   settings: { jevEnabled: boolean; jevModel: string; researchSchedule: ResearchSchedule };
 }
@@ -53,6 +61,11 @@ export interface API {
   feedback(id: string, kind: FeedbackKind): Promise<AppState>;
   undoFeedback(id: string): Promise<AppState>;
   setApplication(id: string, stage: Application['stage'], notes: string): Promise<AppState>;
+  startDraft(id: string, focus: string, description: string): Promise<AppState>;
+  cancelDraft(): Promise<AppState>;
+  saveDraft(id: string, revision: number, application: string, resume: string): Promise<AppState>;
+  reviewDraft(id: string, revision: number, kind: 'application' | 'resume'): Promise<AppState>;
+  acceptDraft(id: string, revision: number): Promise<AppState>;
   startResearch(): Promise<AppState>;
   cancelResearch(): Promise<AppState>;
   status(): Promise<RuntimeStatus>;

@@ -28,15 +28,17 @@ var (
 type Researcher func(context.Context, State, func(string, *ResearchSourceActivity)) (ResearchResult, error)
 
 type Service struct {
-	mu           sync.RWMutex
-	directory    string
-	repository   WorkspaceRepository
-	state        State
-	activeCancel context.CancelFunc
-	researcher   Researcher
-	sessionKey   string
-	wg           sync.WaitGroup
-	persistHook  func() error
+	mu                sync.RWMutex
+	directory         string
+	repository        WorkspaceRepository
+	state             State
+	activeCancel      context.CancelFunc
+	activeDraftCancel context.CancelFunc
+	researcher        Researcher
+	drafter           Drafter
+	sessionKey        string
+	wg                sync.WaitGroup
+	persistHook       func() error
 }
 
 func NewService(directory string) *Service {
@@ -44,7 +46,7 @@ func NewService(directory string) *Service {
 }
 
 func NewServiceWithRepository(directory string, repository WorkspaceRepository) *Service {
-	return &Service{directory: directory, repository: repository, state: InitialState(true), researcher: RunCodex}
+	return &Service{directory: directory, repository: repository, state: InitialState(true), researcher: RunCodex, drafter: RunCodexDraft}
 }
 
 func NewServiceWithResearcher(directory string, researcher Researcher) *Service {
@@ -114,6 +116,15 @@ func prepareLoadedState(loaded *State) error {
 	if loaded.Settings.JevModel == "" {
 		loaded.Settings.JevModel = defaults.JevModel
 	}
+	if loaded.Drafts == nil {
+		loaded.Drafts = []ApplicationDraft{}
+	}
+	for index := range loaded.Drafts {
+		if loaded.Drafts[index].Status == "running" {
+			loaded.Drafts[index].Status = "failed"
+			loaded.Drafts[index].Error = "The application closed before drafting finished."
+		}
+	}
 	if !schedulePattern.MatchString(loaded.Settings.ResearchSchedule.Time) {
 		loaded.Settings.ResearchSchedule.Time = defaults.ResearchSchedule.Time
 	}
@@ -137,7 +148,7 @@ func (s *Service) State() State {
 func (s *Service) ActiveResearch() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.activeCancel != nil
+	return s.activeCancel != nil || s.activeDraftCancel != nil
 }
 
 func (s *Service) WorkspaceID() (string, bool, error) {
@@ -155,7 +166,7 @@ func (s *Service) SetWorkspaceID(id string) error {
 func (s *Service) ImportState(state State) (State, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.activeCancel != nil {
+	if s.activeCancel != nil || s.activeDraftCancel != nil {
 		return State{}, errors.New("cancel active research before importing a workspace")
 	}
 	if err := validateImportedState(state); err != nil {
@@ -178,7 +189,7 @@ func validateImportedState(state State) error {
 	if state.Version != 1 || state.Roles == nil || state.Families == nil || state.Saved == nil || state.Applications == nil || state.Feedback == nil || state.Runs == nil || state.Questions == nil || state.Profile.Skills == nil || state.Profile.WorkModes == nil {
 		return errors.New("invalid workspace")
 	}
-	if len(state.Roles) > MaxOpportunities || len(state.Families) > 12 || len(state.Saved) > MaxOpportunities || len(state.Runs) > 30 || !validText(state.Summary, 12000) || !validStrings(state.Questions, 40) || state.ProfileRevision < 0 || state.ResearchRevision < 0 {
+	if len(state.Roles) > MaxOpportunities || len(state.Drafts) > MaxOpportunities || len(state.Families) > 12 || len(state.Saved) > MaxOpportunities || len(state.Runs) > 30 || !validText(state.Summary, 12000) || !validStrings(state.Questions, 40) || state.ProfileRevision < 0 || state.ResearchRevision < 0 {
 		return errors.New("invalid workspace")
 	}
 	if err := validateProfile(state.Profile); err != nil || !modelPattern.MatchString(state.Settings.JevModel) || !schedulePattern.MatchString(state.Settings.ResearchSchedule.Time) {
@@ -233,6 +244,13 @@ func validateImportedState(state State) error {
 		}
 		seenApplications[item.RoleID] = true
 	}
+	seenDrafts := map[string]bool{}
+	for _, draft := range state.Drafts {
+		if !roleIDs[draft.RoleID] || seenDrafts[draft.RoleID] || draft.Revision < 1 || draft.ProfileRevision < 0 || !oneOf(draft.Status, "running", "ready", "failed", "cancelled") || !validText(draft.Company, 12000) || !validText(draft.Title, 12000) || !validText(draft.Error, 12000) || (draft.SourceURL != "" && SafeURL(draft.SourceURL) == "") || !validDraftContent(draft.Generated) || !validDraftContent(draft.Edited) || (draft.Pending != nil && !validDraftContent(*draft.Pending)) {
+			return errors.New("invalid workspace")
+		}
+		seenDrafts[draft.RoleID] = true
+	}
 	seenFeedback := map[string]bool{}
 	for _, item := range state.Feedback {
 		if item.ID == "" || seenFeedback[item.ID] || !roleIDs[item.RoleID] || item.Skills == nil || !oneOf(item.Kind, "more", "too-technical", "too-junior", "salary-low", "no-industry", "not-interested") || !validText(item.Company, 12000) || !validText(item.Title, 12000) || !validText(item.Industry, 12000) || !validStrings(item.Skills, 40) || !validText(item.CreatedAt, 12000) {
@@ -274,7 +292,7 @@ func (s *Service) persistLocked() error {
 func (s *Service) SaveProfile(profile Profile) (State, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.activeCancel != nil {
+	if s.activeCancel != nil || s.activeDraftCancel != nil {
 		return State{}, errors.New("finish or cancel the current research before changing your profile")
 	}
 	if err := validateProfile(profile); err != nil {
@@ -296,7 +314,7 @@ func (s *Service) SaveProfile(profile Profile) (State, error) {
 func (s *Service) Reset() (State, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.activeCancel != nil {
+	if s.activeCancel != nil || s.activeDraftCancel != nil {
 		return State{}, errors.New("cancel the active research before starting a new profile")
 	}
 	settings := s.state.Settings
@@ -339,6 +357,13 @@ func (s *Service) removeRoleDataLocked(ids map[string]bool) {
 		}
 	}
 	s.state.Applications = applications
+	drafts := s.state.Drafts[:0]
+	for _, item := range s.state.Drafts {
+		if !ids[item.RoleID] {
+			drafts = append(drafts, item)
+		}
+	}
+	s.state.Drafts = drafts
 	feedback := s.state.Feedback[:0]
 	for _, item := range s.state.Feedback {
 		if !ids[item.RoleID] {
@@ -356,10 +381,17 @@ func (s *Service) capOpportunitiesLocked() {
 		return
 	}
 	removed := map[string]bool{}
-	for _, role := range s.state.Roles[MaxOpportunities:] {
-		removed[role.ID] = true
+	protected := map[string]bool{}
+	for _, draft := range s.state.Drafts {
+		protected[draft.RoleID] = true
 	}
-	s.state.Roles = s.state.Roles[:MaxOpportunities]
+	toRemove := len(s.state.Roles) - MaxOpportunities
+	for index := len(s.state.Roles) - 1; index >= 0 && toRemove > 0; index-- {
+		if !protected[s.state.Roles[index].ID] {
+			removed[s.state.Roles[index].ID] = true
+			toRemove--
+		}
+	}
 	s.removeRoleDataLocked(removed)
 }
 
@@ -376,6 +408,9 @@ func (s *Service) RemoveRoles(ids []string) (State, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.activeDraftCancel != nil {
+		return State{}, errors.New("cancel draft generation before removing opportunities")
+	}
 	s.removeRoleDataLocked(set)
 	if err := s.persistLocked(); err != nil {
 		return State{}, err
@@ -481,7 +516,7 @@ func (s *Service) UpdateSettings(settings Settings, key *string) (State, error) 
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.activeCancel != nil {
+	if s.activeCancel != nil || s.activeDraftCancel != nil {
 		return State{}, errors.New("finish research before changing AI settings")
 	}
 	if key != nil {
@@ -594,6 +629,9 @@ func (s *Service) Shutdown() {
 	if s.activeCancel != nil {
 		s.activeCancel()
 	}
+	if s.activeDraftCancel != nil {
+		s.activeDraftCancel()
+	}
 	s.mu.Unlock()
 	s.wg.Wait()
 	_ = s.repository.Close()
@@ -653,6 +691,54 @@ func (s *Service) Dispatch(method string, args []any) (any, error) {
 			return nil, err
 		}
 		return s.SetApplication(id, stage, notes)
+	case "startDraft":
+		var id, focus, description string
+		if err := decodeArg(args, 0, &id); err != nil {
+			return nil, err
+		}
+		if err := decodeArg(args, 1, &focus); err != nil {
+			return nil, err
+		}
+		if err := decodeArg(args, 2, &description); err != nil {
+			return nil, err
+		}
+		return s.StartDraft(id, focus, description)
+	case "cancelDraft":
+		return s.CancelDraft()
+	case "saveDraft":
+		var input struct {
+			ID          string `json:"id"`
+			Revision    int    `json:"revision"`
+			Application string `json:"application"`
+			Resume      string `json:"resume"`
+		}
+		if err := decodeArg(args, 0, &input); err != nil {
+			return nil, err
+		}
+		return s.SaveDraft(input.ID, input.Revision, input.Application, input.Resume)
+	case "reviewDraft":
+		var id, kind string
+		var revision int
+		if err := decodeArg(args, 0, &id); err != nil {
+			return nil, err
+		}
+		if err := decodeArg(args, 1, &revision); err != nil {
+			return nil, err
+		}
+		if err := decodeArg(args, 2, &kind); err != nil {
+			return nil, err
+		}
+		return s.ReviewDraft(id, revision, kind)
+	case "acceptDraft":
+		var id string
+		var revision int
+		if err := decodeArg(args, 0, &id); err != nil {
+			return nil, err
+		}
+		if err := decodeArg(args, 1, &revision); err != nil {
+			return nil, err
+		}
+		return s.AcceptDraft(id, revision)
 	case "startResearch":
 		return s.StartResearch()
 	case "cancelResearch":

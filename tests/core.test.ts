@@ -10,6 +10,7 @@ import { parseResearch, parseProfile, parseWorkspaceState, safeURL } from '../se
 import { jevRequest, assessWithJev } from '../server/jev.js';
 import { CareerService, dispatch, MAX_OPPORTUNITIES, scheduleDue } from '../server/service.js';
 import { runCodex, webSearchUpdates } from '../server/codex.js';
+import { runCodexDraft, validateDraftContent } from '../server/drafting.js';
 import { createPreview } from '../server/preview.js';
 import type { ResearchResult } from '../src/types.js';
 
@@ -109,6 +110,51 @@ test('workspace persists edits, feedback, application notes and repeat-run saves
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 
+test('draft generation, review, stale edit protection and restart preserve the application', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'waypoint-draft-test-'));
+  try {
+    let generation = 0;
+    const service = await new CareerService(dir, false, async () => parseResearch(result()), undefined, async input => ({
+      application: `${++generation}: I led a product team and improved onboarding. `.repeat(4),
+      resume: 'Senior Product Manager, product delivery and onboarding. '.repeat(4),
+      evidence: [{ claim: 'Product delivery', source: 'Senior Product Manager', requirement: 'Lead product work' }],
+      questions: ['Confirm exact dates.'],
+    })).init();
+    await service.saveProfile(initialState().profile);
+    await service.startResearch(); await settle(service);
+    const id = service.state.roles[0].id;
+    await service.startDraft(id, '', '');
+    for (let n = 0; n < 100 && service.state.drafts[0].status === 'running'; n++) await new Promise(resolve => setTimeout(resolve, 10));
+    let draft = service.state.drafts[0];
+    assert.equal(draft.status, 'ready');
+    assert.equal(service.state.applications[0].stage, 'Preparing');
+    await assert.rejects(service.saveDraft({ id, revision: draft.revision - 1, application: 'stale', resume: 'stale' }), /changed in another view/);
+    await service.saveDraft({ id, revision: draft.revision, application: draft.edited.application + ' Edited.', resume: draft.edited.resume });
+    draft = service.state.drafts[0];
+    await service.reviewDraft(id, draft.revision, 'application');
+    assert.equal(service.state.drafts[0].applicationReviewed, true);
+    const oldText = service.state.drafts[0].edited.application;
+    await service.startDraft(id, '', '');
+    for (let n = 0; n < 100 && service.state.drafts[0].status === 'running'; n++) await new Promise(resolve => setTimeout(resolve, 10));
+    draft = service.state.drafts[0];
+    assert.equal(draft.edited.application, oldText);
+    assert.match(draft.pending?.application || '', /^2:/);
+    await service.acceptDraft(id, draft.revision);
+    assert.equal(service.state.drafts[0].applicationReviewed, false);
+    assert.match(service.state.drafts[0].edited.application, /^2:/);
+    draft = service.state.drafts[0];
+    await service.saveDraft({ id, revision: draft.revision, application: draft.edited.application + ' Edited.', resume: draft.edited.resume });
+    await service.reviewDraft(id, service.state.drafts[0].revision, 'application');
+    await service.shutdown();
+    const reopened = await new CareerService(dir).init();
+    assert.match(reopened.state.drafts[0].edited.application, /Edited\.$/);
+    assert.equal(reopened.state.drafts[0].applicationReviewed, true);
+    await reopened.shutdown();
+    const unsupported = { application: 'Application. '.repeat(10), resume: 'Resume. '.repeat(12), evidence: [{ claim: 'Invented', source: 'Managed 100 people', requirement: 'Leadership' }], questions: [] };
+    assert.throws(() => validateDraftContent(unsupported, { profile: initialState().profile, role: result().roles[0], notes: '', focus: '', description: '' }), /without matching profile evidence/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
 test('cancellation and failure preserve the previous workspace', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'waypoint-cancel-'));
   try {
@@ -181,6 +227,18 @@ test('real subprocess adapter sends profile through stdin, sets a read-only sand
     const events: string[] = []; const sources: string[] = [];
     const output = await runCodex(initialState(), new AbortController().signal, (message, source) => { if (message) events.push(message); if (source) sources.push(source.url); });
     assert.equal(output.roles.length, 1); assert.ok(output.roles[0].id.startsWith('role-')); assert.ok(events[0].includes('connected')); assert.deepEqual(sources, ['https://careers.acme.com/jobs/123']);
+  } finally { if (old) process.env.CODEX_BIN = old; else delete process.env.CODEX_BIN; await rm(dir, { recursive: true, force: true }); }
+});
+
+test('draft subprocess omits web search and validates schema output', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'waypoint-draft-cli-'));
+  const binary = join(dir, 'fake-codex.mjs'); const old = process.env.CODEX_BIN;
+  try {
+    const content = { application: 'I led product delivery. '.repeat(5), resume: 'Senior Product Manager. '.repeat(5), evidence: [{ claim: 'Product delivery', source: 'Senior Product Manager', requirement: 'Lead product work' }], questions: [] };
+    await writeFile(binary, `#!/usr/bin/env node\nimport fs from 'node:fs';\nconst args=process.argv.slice(2);\nif(!args.includes('read-only')||args.includes('--search')||!args.includes('--output-schema'))process.exit(9);\nlet input='';for await(const c of process.stdin)input+=c;\nif(!input.includes('Alex Morgan'))process.exit(8);\nfs.writeFileSync(args[args.indexOf('--output-last-message')+1],JSON.stringify(${JSON.stringify(content)}));\n`);
+    await chmod(binary, 0o700); process.env.CODEX_BIN = binary;
+    const output = await runCodexDraft({ profile: initialState().profile, role: result().roles[0], notes: '', focus: '', description: '' }, new AbortController().signal);
+    assert.equal(output.evidence.length, 1);
   } finally { if (old) process.env.CODEX_BIN = old; else delete process.env.CODEX_BIN; await rm(dir, { recursive: true, force: true }); }
 });
 

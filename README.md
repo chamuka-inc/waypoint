@@ -27,7 +27,7 @@ Open `http://127.0.0.1:4173`. The preview is bound to loopback and is not a host
 
 ## Connect the AI
 
-### Codex — research and explanations
+### Codex — research, explanations, and drafts
 
 Install and sign in to the Codex CLI on the same computer:
 
@@ -39,7 +39,7 @@ codex --version
 
 Restart Waypoint, then check **Settings → Codex**. For applications launched outside a terminal, ensure Codex is on the inherited PATH, or launch with `CODEX_BIN` set to an absolute executable path. On Windows, use an actual executable rather than a shell-only `.cmd` shim; the app deliberately uses `shell: false`.
 
-The app invokes the installed CLI with live web search, a read-only sandbox, an ephemeral session, JSON events, and a JSON output schema. It uses the account/model configured in your CLI. CV content is sent through stdin rather than a command-line argument. No key is embedded in the app.
+The app invokes the installed CLI with a read-only sandbox, an ephemeral session, JSON events, and a JSON output schema. Research uses live web search; application drafting uses the saved opportunity and profile without web search. It uses the account/model configured in your CLI. CV content is sent through stdin rather than a command-line argument. No key is embedded in the app.
 
 The CLI process runs locally. **Model inference and search are not offline**: they use your configured Codex provider. The whole profile is included in the research brief; avoid including contact information you do not want sent. Prompts instruct the agent to use generic role/skill/location search terms, never raw CV text, and not to submit applications or contact people. The app does not override your installed Codex policy or configuration.
 
@@ -66,7 +66,7 @@ Jev receives skills, ambitions, seniority, opportunity responsibilities/evidence
 3. **What matters most:** Weight experience fit, compensation, flexibility, and progression. Scores are preference ordering aids, not hiring probabilities.
 4. **Research opportunities:** Codex identifies role families, searches live sources, investigates vacancies, and returns a structured report. The research activity view shows safe public source links as they are found and reviewed. Research continues while you use other views. It has a 12-minute limit and can be cancelled.
 5. **Discover / Career paths:** Explore direct, adjacent, and stretch options. Filter and search; inspect evidence, responsibilities, salary, location, gaps, and source excerpts. Select and remove one or more opportunities when they are no longer useful. Vacancy status is reported by the research agent and should be checked before applying.
-6. **Shortlist / Applications:** Save roles, prepare truthful CV/interview examples, add notes, export a Markdown brief, and move applications through Preparing, Applied, Interview, and Offer.
+6. **Shortlist / Applications:** Save roles, add notes, and move applications through Preparing, Applied, Interview, and Offer. From a researched opportunity, choose **Prepare application → Draft application and CV** to ask the installed Codex CLI for an application statement and tailored CV. Review the linked profile evidence, edit both drafts, mark each reviewed, then export as DOCX, PDF, or plain text. Drafts are saved in the current workspace and never submitted for you.
 7. **Feedback:** “More like this”, “Too technical”, “Too junior”, salary/industry objections, and “Not for me” influence ordering and subsequent research. Undo feedback in Settings.
 8. **Workspaces:** Use the identity card at the bottom of the sidebar to switch or create an isolated workspace. Create blank, copy profile/preferences only, or import a JSON export. Manage rename, archive, restore, recently deleted, and permanent deletion from Settings.
 
@@ -83,7 +83,7 @@ In the desktop app, **Settings → Daily research** can run research once a day 
 - Salary amounts preserve currency and pay period. Annual salary filtering/sorting only compares the user's currency; the app does not invent exchange rates or annualise hourly contracts.
 - Unknown salary, work arrangement, exclusions, and uncertain Jev fit remain visible as separate checks. Remote is not assumed to mean worldwide.
 - Saved/application roles absent from a new run are retained and marked uncertain. Stable IDs preserve notes when the same role returns.
-- The opportunity workspace holds at most 50 roles. Newer research replaces the oldest roles and removes their associated shortlist, application, and feedback records.
+- The opportunity workspace holds at most 50 roles. Newer research replaces the oldest roles without drafts; roles with saved application drafts are protected from automatic eviction. Explicit role removal deletes its drafts after a confirmation in the UI.
 - Export your workspace or shortlist from Settings/Shortlist. Workspace exports remain portable JSON and contain personal data but no stored API key. Import an export when creating a workspace; see [`docs/persistence.md`](docs/persistence.md) for storage and lower-level recovery details.
 - “Start fresh” requires a confirmation in the app and clears candidate data; connection settings are retained.
 
@@ -124,7 +124,7 @@ The GitHub Actions release workflow creates DMG, NSIS, and Debian artifacts on t
 
 ## Current boundaries
 
-This is a working first implementation, not a fully hardened employment-data platform. It has no job-board login automation, LinkedIn scraping, scheduling while the desktop process is not running, automatic application submission, CV rewriting into a new DOCX, OCR, cloud sync, or multi-user accounts. Source discovery depends on the installed Codex version, web-search access, account permissions, and vacancy accessibility. It does not bypass paywalls or access restrictions. Model judgments can be wrong even when the returned data is schema-valid.
+This is a working first implementation, not a fully hardened employment-data platform. It has no job-board login automation, LinkedIn scraping, scheduling while the desktop process is not running, automatic application submission, OCR, cloud sync, or multi-user accounts. Source discovery depends on the installed Codex version, web-search access, account permissions, and vacancy accessibility. It does not bypass paywalls or access restrictions. Model judgments and draft claims can be wrong even when the returned data is schema-valid; review all application text before use.
 
 The next production gates are authenticated end-to-end research evaluation, provider-specific search/source coverage testing, native packaging on the target OS, document-parser isolation and resource-limit hardening, accessibility auditing, and a labelled evaluation set for Jev thresholds and candidate-fit quality.
 

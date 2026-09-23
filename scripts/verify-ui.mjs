@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, chmod, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { chromium } from 'playwright';
@@ -9,6 +9,11 @@ import { initialState } from '../src/demo.ts';
 import { parseResearch } from '../server/schema.ts';
 
 const data = await mkdtemp(join(tmpdir(), 'waypoint-ui-'));
+const priorCodexBinary = process.env.CODEX_BIN;
+const fakeCodexBinary = join(data, 'codex-status');
+await writeFile(fakeCodexBinary, '#!/bin/sh\necho codex-test\n');
+await chmod(fakeCodexBinary, 0o700);
+process.env.CODEX_BIN = fakeCodexBinary;
 const shots = resolve(process.env.SCREENSHOT_DIR || 'test-artifacts');
 await mkdir(shots, { recursive: true });
 const fakeResearch = async (_state, signal, event) => {
@@ -19,7 +24,8 @@ const fakeResearch = async (_state, signal, event) => {
   const d = initialState();
   return parseResearch({ summary: 'Integration test research, with a simulated provider.', families: d.families, questions: [], roles: d.roles.slice(0, 1).map(r => ({ ...r, demo: false, status: 'open', sources: [{ url: 'https://careers.acme.com/jobs/123', title: 'Test vacancy', excerpt: 'Lead a cross-functional product team.', checkedAt: '' }] })) });
 };
-const service = await new CareerService(data, false, fakeResearch).init();
+const fakeDrafter = async input => ({ application: 'I led a product team and improved onboarding. '.repeat(4), resume: 'Senior Product Manager, product delivery and onboarding. '.repeat(4), evidence: [{ claim: 'Product delivery', source: 'Product manager', requirement: 'Lead product work' }], questions: ['Confirm exact dates.'] });
+const service = await new CareerService(data, false, fakeResearch, undefined, fakeDrafter).init();
 const preview = await createPreview({ service, port: 0 });
 const browser = await chromium.launch({
   headless: true,
@@ -132,6 +138,43 @@ try {
   await page.locator('.nav-item[data-nav="discover"]').click();
   await page.locator('.role-open').click();
   check(await page.locator('.source-link').count() === 1, 'Sourced research has a real link field and freshness context');
+  await page.locator('[data-detail-tab="prepare"]').click();
+  await page.locator('[data-action="open-draft"]').click();
+  check(await page.locator('#draft-form').isVisible(), 'Opportunity opens the Codex drafting setup');
+  await page.locator('#draft-form button[type="submit"]').click();
+  await page.locator('#draft-text').waitFor({ timeout: 12000 });
+  check(service.state.drafts[0].status === 'ready' && service.state.drafts[0].edited.resume.length > 0, 'Simulated Codex creates both persisted draft artifacts');
+  await page.locator('#draft-text').fill(service.state.drafts[0].edited.application + ' Edited by candidate.');
+  await page.locator('[data-action="save-draft"]').click();
+  await page.locator('[data-action="review-draft"]').click();
+  await page.waitForFunction(() => document.querySelector('.draft-controls + small')?.textContent?.includes('Reviewed by you'));
+  check(service.state.drafts[0].applicationReviewed && service.state.drafts[0].edited.application.endsWith('Edited by candidate.'), 'Application edits save and require explicit review');
+  for (const [format, signature] of [['txt', 'I led'], ['docx', 'PK'], ['pdf', '%PDF']]) {
+    await page.locator('#draft-format').selectOption(format);
+    const download = await Promise.all([page.waitForEvent('download'), page.locator('[data-action="export-draft"]').click()]).then(([item]) => item);
+    const bytes = await readFile(await download.path());
+    check(bytes.toString('utf8', 0, signature.length) === signature, `Reviewed application exports as ${format.toUpperCase()} (${download.suggestedFilename()}; ${bytes.toString('utf8', 0, 12)})`);
+    if (format === 'docx') {
+      const mammoth = await import('mammoth');
+      check((await mammoth.extractRawText({ buffer: bytes })).value.includes('Edited by candidate.'), 'DOCX retains the reviewed candidate edit');
+    }
+    if (format === 'pdf') {
+      const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      const loadingTask = getDocument({ data: new Uint8Array(bytes) });
+      const document = await loadingTask.promise;
+      const content = await (await document.getPage(1)).getTextContent();
+      check(content.items.map(item => item.str || '').join(' ').includes('Edited by candidate.'), 'PDF retains the reviewed candidate edit');
+      await loadingTask.destroy();
+    }
+  }
+  await page.locator('[data-draft-artifact="resume"]').click();
+  check(await page.locator('#draft-text').inputValue() === service.state.drafts[0].edited.resume, 'Tailored CV is editable in its own tab');
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'waypoint-drafts.png') });
+  await page.setViewportSize({ width: 390, height: 844 });
+  check(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'Draft editor fits a narrow screen');
+  await page.screenshot({ animations: 'disabled', path: join(shots, 'waypoint-drafts-mobile.png') });
+  await page.setViewportSize({ width: 1460, height: 1050 });
+  await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
   await page.locator('.role-selector input').check();
   page.once('dialog', dialog => dialog.accept());
@@ -184,4 +227,4 @@ try {
   await page.screenshot({ animations: 'disabled', path: join(shots, 'waypoint-mobile.png'), fullPage: true });
   check(errors.length === 0, `No browser runtime errors: ${errors.join('; ')}`);
   console.log(`\n${checks} UI checks passed. Screenshots: ${shots}`);
-} finally { await browser.close(); await preview.close(); await rm(data, { recursive: true, force: true }); }
+} finally { await browser.close(); await preview.close(); await rm(data, { recursive: true, force: true }); if (priorCodexBinary === undefined) delete process.env.CODEX_BIN; else process.env.CODEX_BIN = priorCodexBinary; }

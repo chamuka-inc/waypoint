@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["application", "resume", "evidence", "questions"],
+  "properties": {
+    "application": { "type": "string" },
+    "resume": { "type": "string" },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claim", "source", "requirement"],
+        "properties": {
+          "claim": { "type": "string" },
+          "source": { "type": "string" },
+          "requirement": { "type": "string" }
+        }
+      }
+    },
+    "questions": { "type": "array", "items": { "type": "string" } }
+  }
+}

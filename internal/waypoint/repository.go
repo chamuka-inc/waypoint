@@ -78,14 +78,33 @@ func (r *SQLiteRepository) migrate() error {
 	if err := r.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
 		return err
 	}
-	if version > 2 {
+	if version > 3 {
 		return fmt.Errorf("database schema %d is newer than this application supports", version)
 	}
-	if version == 2 {
+	if version == 3 {
 		return nil
 	}
 	if version == 0 {
 		if err := r.migrateInitialSchema(); err != nil {
+			return err
+		}
+	}
+	if version == 0 || version == 1 {
+		tx, err := r.db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if _, err = tx.Exec(`CREATE TABLE workspace_identity (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			workspace_id TEXT NOT NULL UNIQUE
+		) STRICT`); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(`PRAGMA user_version = 2`); err != nil {
+			return err
+		}
+		if err = tx.Commit(); err != nil {
 			return err
 		}
 	}
@@ -94,14 +113,13 @@ func (r *SQLiteRepository) migrate() error {
 		return err
 	}
 	defer tx.Rollback()
-	_, err = tx.Exec(`CREATE TABLE workspace_identity (
-		id INTEGER PRIMARY KEY CHECK (id = 1),
-		workspace_id TEXT NOT NULL UNIQUE
-	) STRICT`)
-	if err != nil {
+	if _, err = tx.Exec(`CREATE TABLE application_drafts (
+		role_id TEXT PRIMARY KEY REFERENCES opportunities(id) ON DELETE CASCADE,
+		payload_json TEXT NOT NULL
+	) STRICT`); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(`PRAGMA user_version = 2`); err != nil {
+	if _, err = tx.Exec(`PRAGMA user_version = 3`); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -267,6 +285,26 @@ func (r *SQLiteRepository) Load() (State, bool, error) {
 			return State{}, false, errors.New("invalid opportunity data")
 		}
 		state.Roles = append(state.Roles, role)
+	}
+	if err := rows.Close(); err != nil {
+		return State{}, false, err
+	}
+	rows, err = r.db.Query(`SELECT payload_json FROM application_drafts ORDER BY rowid`)
+	if err != nil {
+		return State{}, false, err
+	}
+	for rows.Next() {
+		var payload string
+		var draft ApplicationDraft
+		if err := rows.Scan(&payload); err != nil {
+			rows.Close()
+			return State{}, false, err
+		}
+		if err := json.Unmarshal([]byte(payload), &draft); err != nil {
+			rows.Close()
+			return State{}, false, err
+		}
+		state.Drafts = append(state.Drafts, draft)
 	}
 	if err := rows.Close(); err != nil {
 		return State{}, false, err
@@ -454,6 +492,15 @@ func (r *SQLiteRepository) Save(state State) error {
 	}
 	for _, item := range state.Applications {
 		if _, err := tx.Exec(`INSERT INTO applications (role_id, stage, notes, updated_at) VALUES (?, ?, ?, ?)`, item.RoleID, item.Stage, item.Notes, item.UpdatedAt); err != nil {
+			return err
+		}
+	}
+	for _, item := range state.Drafts {
+		payload, err := marshalJSON(item)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`INSERT INTO application_drafts (role_id, payload_json) VALUES (?, ?)`, item.RoleID, payload); err != nil {
 			return err
 		}
 	}
