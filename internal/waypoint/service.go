@@ -599,11 +599,13 @@ func (s *Service) StartScheduledResearch(now time.Time) (bool, error) {
 func (s *Service) Status() RuntimeStatus {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	binary := os.Getenv("CODEX_BIN")
-	if binary == "" {
-		binary = "codex"
+	binary, err := resolveCodexBinary()
+	var output []byte
+	if err == nil {
+		command := exec.CommandContext(ctx, binary, "--version")
+		command.Env = codexCommandEnvironment(os.Environ(), binary)
+		output, err = command.Output()
 	}
-	output, err := exec.CommandContext(ctx, binary, "--version").Output()
 	s.mu.RLock()
 	configured := s.getKeyLocked() != ""
 	s.mu.RUnlock()

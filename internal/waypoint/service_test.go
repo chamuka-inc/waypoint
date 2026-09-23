@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -153,6 +154,27 @@ func TestCodexDiscoveryHonoursExplicitOverride(t *testing.T) {
 	}
 	if _, err := resolveCodexBinaryWith("missing-codex", lookup, "", "darwin"); err == nil {
 		t.Fatal("invalid CODEX_BIN override was accepted")
+	}
+}
+
+func TestStatusFindsCodexOutsideGUIPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses a Unix shell executable")
+	}
+	home := t.TempDir()
+	binary := filepath.Join(home, ".local", "bin", "codex")
+	if err := os.MkdirAll(filepath.Dir(binary), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\nprintf 'codex-cli 0.0-test\\n'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("CODEX_BIN", "")
+	status := NewService(t.TempDir()).Status()
+	if !status.Codex || status.CodexVersion != "codex-cli 0.0-test" {
+		t.Fatalf("Codex was not detected outside the GUI path: %#v", status)
 	}
 }
 
