@@ -45,6 +45,7 @@ export interface AppState {
   settings: { jevEnabled: boolean; jevModel: string; researchSchedule: ResearchSchedule };
 }
 export interface RuntimeStatus { desktop: boolean; codex: boolean; codexVersion: string; jevConfigured: boolean; storage: string }
+export interface UpdateInfo { currentVersion: string; latestVersion: string; releaseUrl: string; available: boolean }
 export interface WorkspaceSummary {
   id: string; name: string; current: boolean; demo: boolean; opportunityCount: number; savedCount: number;
   profileComplete: boolean; researchRunning: boolean; createdAt: string; updatedAt: string; lastOpenedAt: string;

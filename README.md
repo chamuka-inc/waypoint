@@ -108,7 +108,7 @@ npm run package    # native Wails application for this platform
 npm run dist       # equivalent local production build
 ```
 
-The GitHub Actions release workflow creates DMG, NSIS, and Debian artifacts on their native runners. Tagged builds attach them and a `SHA256SUMS.txt` file to the corresponding GitHub Release. The macOS build is currently unsigned and not notarised. After macOS blocks the first launch, open **System Settings → Privacy & Security**, scroll to Security, choose **Open Anyway**, and confirm **Open**. Compare the DMG's `shasum -a 256` output with `SHA256SUMS.txt` before overriding Gatekeeper. No automatic updater is configured.
+The GitHub Actions release workflow creates DMG, NSIS, and Debian artifacts on their native runners. Tagged builds attach them and a `SHA256SUMS.txt` file to the corresponding GitHub Release. Waypoint checks the public GitHub **releases/latest** page for a newer stable release at startup, every six hours while open, and when you choose **Settings → App updates → Check for updates**. The check requires no GitHub account, API token, or GitHub API access. A new release appears in an in-app banner with a link to its release page. The macOS build is currently unsigned and not notarised. After macOS blocks the first launch, open **System Settings → Privacy & Security**, scroll to Security, choose **Open Anyway**, and confirm **Open**. Compare the DMG's `shasum -a 256` output with `SHA256SUMS.txt` before overriding Gatekeeper. Installation is manual; no automatic updater is configured.
 
 ## Project layout
 

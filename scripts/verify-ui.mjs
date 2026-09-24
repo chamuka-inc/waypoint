@@ -41,6 +41,10 @@ try {
   let initialStateRequest = true;
   await page.route('**/api/action', async route => {
     const request = route.request();
+    if (request.postDataJSON()?.method === 'checkForUpdates') {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ result: { currentVersion: '0.3.1', latestVersion: '0.4.0', releaseUrl: 'https://github.com/chamuka-inc/waypoint/releases/tag/v0.4.0', available: true } }) });
+      return;
+    }
     if (initialStateRequest && request.postDataJSON()?.method === 'bootstrap') {
       initialStateRequest = false;
       await new Promise(resolve => setTimeout(resolve, 350));
@@ -51,6 +55,10 @@ try {
   check(await page.locator('.startup-splash').isVisible(), 'Branded splash remains visible while initial state loads');
   await page.screenshot({ animations: 'disabled', path: join(shots, 'waypoint-splash.png') });
   await page.waitForSelector('.role-card');
+  await page.getByText('Waypoint 0.4.0 is available').first().waitFor();
+  check(await page.locator('.update-banner a[href="https://github.com/chamuka-inc/waypoint/releases/tag/v0.4.0"]').count() === 1, 'New release banner links to the published release');
+  await page.locator('[data-action="dismiss-update"]').click();
+  check(await page.locator('.update-banner').count() === 0, 'Release notice can be dismissed for this session');
   check(await page.locator('.startup-splash').count() === 0 && await page.locator('body').evaluate(body => body.classList.contains('app-ready')), 'Splash hands off after the first application render');
   check(await page.locator('.role-card').count() === 6, 'Demo is labelled and renders six illustrative opportunities');
   const sortSelect = page.locator('[data-select-control="sort"]');
@@ -104,6 +112,9 @@ try {
   check(await page.locator('.path-card').count() === 4, 'Career paths expose adjacent and stretch directions');
   await page.screenshot({ animations: 'disabled', path: join(shots, 'waypoint-paths.png'), fullPage: true });
   await page.locator('.nav-item[data-nav="settings"]').click();
+  check(await page.getByRole('heading', { name: 'App updates' }).count() === 1 && await page.getByText('Update available').count() === 1, 'Settings keeps the release status after banner dismissal');
+  await page.locator('[data-action="check-updates"]').click();
+  check((await page.locator('#toast').innerText()).includes('Waypoint 0.4.0 is available'), 'Manual release check reports the newer version');
   await page.locator('[data-undo]').click();
   await page.waitForFunction(() => document.querySelector('#toast')?.textContent?.includes('Feedback removed'));
   check(service.state.feedback.length === 0, 'Preference feedback can be undone');

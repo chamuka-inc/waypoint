@@ -6,6 +6,7 @@ declare global {
           Call(method: string, args: unknown[]): Promise<unknown>;
           OpenExternal(url: string): Promise<void>;
           Ready(title: string): Promise<void>;
+          CheckForUpdates(): Promise<unknown>;
         };
       };
     };
@@ -18,6 +19,7 @@ const backend = window.go?.main?.App;
 if (backend) {
   window.waypoint = {
     call: (method: string, ...args: unknown[]) => backend.Call(method, args),
+    checkForUpdates: () => backend.CheckForUpdates(),
   };
 
   document.addEventListener('click', event => {
