@@ -9,13 +9,13 @@
   "frontend:dev:watcher": "npm run dev:wails",
   "frontend:dev:serverUrl": "auto",
   "author": {
-    "name": "Chamuka Inc."
+    "name": "Chamuka Labs"
   },
   "info": {
-    "companyName": "Chamuka Inc.",
+    "companyName": "Chamuka Labs",
     "productName": "Waypoint",
     "productVersion": "0.3.3",
-    "copyright": "Copyright 2026 Chamuka Inc.",
+    "copyright": "Copyright 2026 Chamuka Labs",
     "comments": "Private, evidence-led career research workspace."
   }
 }

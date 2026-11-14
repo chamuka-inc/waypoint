@@ -81,7 +81,7 @@ jobs:
           Priority: optional
           Architecture: amd64
           Depends: libgtk-3-0, libwebkit2gtk-4.1-0
-          Maintainer: Chamuka Inc.
+          Maintainer: Chamuka Labs
           Description: Private evidence-led career research workspace
           EOF
           cat > "$package/usr/share/applications/waypoint.desktop" <<'EOF'
