@@ -6,7 +6,7 @@ Desktop workspace for evidence-led career research.
 
 A personal career research desktop app. Bring your experience, preferences, and ambitions; investigate direct-fit, adjacent, and sensible stretch opportunities with source evidence and actionable next steps.
 
-[Website](https://chamuka-inc.github.io/chamuka-waypoint/) · [Download the latest release](https://github.com/chamuka-inc/chamuka-waypoint/releases/latest) · [Project issues](https://github.com/chamuka-inc/chamuka-waypoint/issues)
+[Website](https://chamuka-labs.github.io/chamuka-waypoint/) · [Download the latest release](https://github.com/chamuka-labs/chamuka-waypoint/releases/latest) · [Project issues](https://github.com/chamuka-labs/chamuka-waypoint/issues)
 
 **Implemented stack:** Wails 2 + Go, SQLite, HTML/CSS/TypeScript, Vite, local Codex CLI, and TypeSafe Jev. Wails uses the operating system's webview, while the native service, persistence, scheduling, document parsing, and provider adapters run in a compiled Go binary. No Node runtime or bundled Chromium is included in the installed application.
 
