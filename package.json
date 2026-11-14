@@ -5,6 +5,7 @@
   "type": "module",
   "description": "A personal career research desktop application powered by Codex and TypeSafe Jev",
   "author": "Chamuka Inc.",
+  "license": "Apache-2.0",
   "homepage": "https://chamuka-inc.github.io/waypoint/",
   "repository": {
     "type": "git",
