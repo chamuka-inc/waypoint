@@ -1,10 +1,12 @@
-# Waypoint
+# Chamuka Waypoint
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
+Desktop workspace for evidence-led career research.
+
 A personal career research desktop app. Bring your experience, preferences, and ambitions; investigate direct-fit, adjacent, and sensible stretch opportunities with source evidence and actionable next steps.
 
-[Website](https://chamuka-inc.github.io/waypoint/) · [Download the latest release](https://github.com/chamuka-inc/waypoint/releases/latest) · [Project issues](https://github.com/chamuka-inc/waypoint/issues)
+[Website](https://chamuka-inc.github.io/chamuka-waypoint/) · [Download the latest release](https://github.com/chamuka-inc/chamuka-waypoint/releases/latest) · [Project issues](https://github.com/chamuka-inc/chamuka-waypoint/issues)
 
 **Implemented stack:** Wails 2 + Go, SQLite, HTML/CSS/TypeScript, Vite, local Codex CLI, and TypeSafe Jev. Wails uses the operating system's webview, while the native service, persistence, scheduling, document parsing, and provider adapters run in a compiled Go binary. No Node runtime or bundled Chromium is included in the installed application.
 
@@ -137,8 +139,20 @@ The next production gates are authenticated end-to-end research evaluation, prov
 - [TypeSafe quick start](https://docs.typesafe.ai/introduction/quickstart): endpoint, authentication, request/response shape, `jev-latest`.
 - [Wails documentation](https://wails.io/docs/introduction): native bindings, system webviews, platform builds, and runtime APIs.
 
+## Contributing
+
+Issues and pull requests are welcome.
+
+## Security
+
+Report vulnerabilities to [security@chamuka.ai](mailto:security@chamuka.ai).
+
 ## License
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
 
 This product includes the Noto Sans font, licensed under the SIL Open Font License, Version 1.1. See `src/assets/NotoSans-OFL.txt`.
+
+---
+
+Part of [Chamuka Labs](https://chamuka.ai), an applied AI lab.
