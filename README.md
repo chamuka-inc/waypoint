@@ -1,5 +1,7 @@
 # Waypoint
 
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 A personal career research desktop app. Bring your experience, preferences, and ambitions; investigate direct-fit, adjacent, and sensible stretch opportunities with source evidence and actionable next steps.
 
 [Website](https://chamuka-inc.github.io/waypoint/) · [Download the latest release](https://github.com/chamuka-inc/waypoint/releases/latest) · [Project issues](https://github.com/chamuka-inc/waypoint/issues)
@@ -134,3 +136,9 @@ The next production gates are authenticated end-to-end research evaluation, prov
 - [TypeSafe introduction](https://docs.typesafe.ai/introduction): Jev's typed decision model and atomic questions.
 - [TypeSafe quick start](https://docs.typesafe.ai/introduction/quickstart): endpoint, authentication, request/response shape, `jev-latest`.
 - [Wails documentation](https://wails.io/docs/introduction): native bindings, system webviews, platform builds, and runtime APIs.
+
+## License
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+This product includes the Noto Sans font, licensed under the SIL Open Font License, Version 1.1. See `src/assets/NotoSans-OFL.txt`.
